@@ -335,7 +335,7 @@ def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
 # =====================================================================
 app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V4.9")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-app.add_middleware(CORSMiddleware, allow_origins=["https://housing-frontend-sable.vercel.app"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.exception_handler(RequestValidationError)
 async def validation_err_handler(request: Request, exc: RequestValidationError):
