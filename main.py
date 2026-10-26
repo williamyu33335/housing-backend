@@ -19,6 +19,7 @@ SIM_TOTAL_YEARS = 30
 RENT_CANDIDATES = list(range(0, 21)) # 完整保留 0 到 20 年
 LOAN_CANDIDATES = list(range(5, 31)) # 完整保留 5 到 30 年
 RENT_LEVELS_FOR_ABSOLUTE = [1200, 1500, 1800, 2200, 2600, 3000, 3500, 4000]
+DOWN_STRATEGIES = ["min", "balanced", "max"] # 新增：首付策略（最低、折中、倾尽全力）
 
 TOP_N = 20
 PER_GROUP_N = 3
@@ -47,11 +48,11 @@ MODEL_ASSUMPTIONS = [
     "租金按年度复利调价，同一年内12个月租金固定不变",
     "严苛财务红线：无论何种方案，购房还贷期（真实月供+生活开销+物业费）超过月收入 70% 的组合将被直接一票否决剔除",
     "小康家庭定义：全生命周期平均月度纯现金结余必须达到或超过总收入的 50%，抗拒沦为被账单绑架的打工机器",
-    "反资本剥削：贷款年限越短，时间效率得分越高，鼓励尽早赎清贷款，少给银行交利息",
-    "抗风险稳健度算法升级：基于生命周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算，越安全得分越高",
+    "反资本剥削：贷款年限越短、首付比例越高，时间效率得分越高，鼓励尽早赎清贷款",
+    "抗风险稳健度算法升级：基于生命周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算",
+    "首付策略升级：输入的首付比例仅作为最低门槛，系统会智能遍历最低首付、折中首付、极限高首付（掏空现金）策略",
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
-    "税后收入、基础生活开销恒定，不引入薪资上涨与物价通胀",
-    "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期，当租房年限为0时自动合并冗余方案以避免权重污染"
+    "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期"
 ]
 
 NANNING_REGIONS = [
@@ -75,7 +76,7 @@ class SimulationRequest(BaseModel):
 
     house_total_wan: float = Field(gt=0)
     initial_savings_wan: float = Field(ge=0)
-    down_payment_ratio: float = Field(ge=15, le=80)
+    down_payment_ratio: float = Field(ge=15, le=80) # 现在仅作为最低首付门槛
     
     monthly_income_net: float = Field(gt=0)
     monthly_expense: float = Field(gt=0)
@@ -99,7 +100,10 @@ class HousingFinanceEngine:
         self.req = req
         self.house_total_yuan = req.house_total_wan * 10000
         self.init_saving = req.initial_savings_wan * 10000
-        self.down_ratio = req.down_payment_ratio / 100.0
+        
+        # 输入的首付比例作为触发底线
+        self.min_down_ratio = req.down_payment_ratio / 100.0
+        self.min_down_payment_yuan = self.house_total_yuan * self.min_down_ratio
         
         self.month_income = req.monthly_income_net
         self.month_base_exp = req.monthly_expense
@@ -113,42 +117,42 @@ class HousingFinanceEngine:
         self.loan_year_rate = req.loan_annual_rate_pct / 100.0
         self.repay_kind = req.repay_kind
 
-        self.down_payment = self.house_total_yuan * self.down_ratio
-        self.loan_principal = self.house_total_yuan - self.down_payment
-
     def set_base_rent(self, new_rent: float):
         self.base_rent = new_rent
 
-    def build_loan_schedule(self, loan_year: int) -> List[float]:
-        key = (self.loan_year_rate, self.repay_kind, self.loan_principal, loan_year)
+    def build_loan_schedule(self, loan_year: int, loan_principal_yuan: float) -> List[float]:
+        # 用当前实际贷款本金做缓存键，防止首付不同导致的缓存冲突
+        rounded_principal = round(loan_principal_yuan, 2)
+        key = (self.loan_year_rate, self.repay_kind, rounded_principal, loan_year)
+        
         if key in LOAN_SCHEDULE_CACHE:
             return LOAN_SCHEDULE_CACHE[key]
 
         n = loan_year * 12
         month_rate = self.loan_year_rate / 12.0
-        if self.loan_principal <= EPS_YUAN:
+        if loan_principal_yuan <= EPS_YUAN:
             res = [0.0] * n
             LOAN_SCHEDULE_CACHE[key] = res
             return res
         if abs(month_rate) < EPS_LOG:
-            res = [self.loan_principal / n] * n
+            res = [loan_principal_yuan / n] * n
             LOAN_SCHEDULE_CACHE[key] = res
             return res
 
         schedule = []
         if self.repay_kind == "equal_principal_interest":
-            m = self.loan_principal * month_rate * (1 + month_rate) ** n / ((1 + month_rate) ** n - 1)
+            m = loan_principal_yuan * month_rate * (1 + month_rate) ** n / ((1 + month_rate) ** n - 1)
             schedule = [m] * n
         else:
-            principal_m = self.loan_principal / n
-            remain = self.loan_principal
+            principal_m = loan_principal_yuan / n
+            remain = loan_principal_yuan
             for _ in range(n):
                 schedule.append(principal_m + remain * month_rate)
                 remain -= principal_m
         LOAN_SCHEDULE_CACHE[key] = schedule
         return schedule
 
-    def single_scenario_sim(self, rent_year: int, loan_year: int) -> Optional[Dict]:
+    def single_scenario_sim(self, rent_year: int, loan_year: int, down_strategy: str) -> Optional[Dict]:
         if loan_year > (SIM_TOTAL_YEARS - rent_year): return None
 
         rent_month = rent_year * 12
@@ -174,13 +178,32 @@ class HousingFinanceEngine:
             if remain_cash < -EPS_YUAN: max_deficit = max(max_deficit, -remain_cash)
             remain_cash = max(0.0, remain_cash)
 
-        # 首付硬约束
-        if remain_cash < self.down_payment - EPS_YUAN: return None
-        remain_cash -= self.down_payment
+        # 首付硬约束：手里的钱必须大于等于最低首付门槛
+        if remain_cash < self.min_down_payment_yuan - EPS_YUAN: return None
+
+        # ==========================================
+        # 🌟 核心改动：根据首付策略动态决定真实首付金额
+        # ==========================================
+        actual_down_payment_yuan = 0.0
+        if down_strategy == "min":
+            # 最低首付（留现金）：刚好付最低门槛，剩下的钱用来理财
+            actual_down_payment_yuan = self.min_down_payment_yuan
+        elif down_strategy == "max":
+            # 倾尽全力付首付：首付拉满（把当前所有可用现金全砸进去，甚至不留备用金），贷款降至最低
+            actual_down_payment_yuan = min(remain_cash, self.house_total_yuan)
+        elif down_strategy == "balanced":
+            # 平衡首付：在最低首付之上，额外掏出剩余存款的 50% 用来降杠杆
+            extra = (remain_cash - self.min_down_payment_yuan) * 0.5
+            actual_down_payment_yuan = min(self.min_down_payment_yuan + extra, self.house_total_yuan)
+
+        actual_loan_principal = self.house_total_yuan - actual_down_payment_yuan
+        
+        # 扣除首付后，剩余的现金
+        remain_cash -= actual_down_payment_yuan
         remain_cash = max(0.0, remain_cash)
 
         # 阶段2：还贷期
-        loan_schedule = self.build_loan_schedule(loan_year)
+        loan_schedule = self.build_loan_schedule(loan_year, actual_loan_principal)
         
         for m in range(loan_month):
             fund_deduct = min(self.month_fund_inflow, loan_schedule[m])
@@ -230,13 +253,19 @@ class HousingFinanceEngine:
         else:
             happiness = max(0.0, (avg_surplus_rate / 0.50) * 100)
 
-        time_eff = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
+        # ==========================================
+        # 🌟 核心改动：时间效率得分修正 (映射到 60~100 分，避免出现“高达 30 分”的尴尬)
+        # ==========================================
+        time_eff_raw = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
+        time_eff = 60.0 + time_eff_raw * 0.4 
 
         return {
             "rent_year": rent_year,
             "loan_year": loan_year,
+            "down_strategy": down_strategy, # 新增：返回该方案使用的首付策略
             "occupied_years": round(occupied_years, 2),
-            "down_payment_wan": round(self.down_payment / 10000, 2),
+            "down_payment_wan": round(actual_down_payment_yuan / 10000, 2), # 返回真实使用的首付
+            "loan_principal_wan": round(actual_loan_principal / 10000, 2),   # 返回真实使用的贷款本金
             "liquid_asset_end_wan": round(remain_cash / 10000, 2),
             "max_deficit_wan": round(max_deficit / 10000, 2),
             "risk_score": round(100.0 - adapt_score, 2),
@@ -323,16 +352,17 @@ def build_diversified_by_rent(out_list: List[Dict]) -> Dict[str, List[Dict]]:
     return groups
 
 def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
+    # 将首付策略（进取/稳健）自然地映射到风格看板中
     return {
-        "稳健型": sorted(out_list, key=lambda x: x["adapt_score"], reverse=True)[:STYLE_TOP_N],
-        "平衡型": sorted(out_list, key=lambda x: x["suitability_score"], reverse=True)[:STYLE_TOP_N],
-        "进取型": sorted(out_list, key=lambda x: x["liquid_asset_end_wan"], reverse=True)[:STYLE_TOP_N],
+        "稳健型": sorted([x for x in out_list if x["down_strategy"] in ("max", "balanced")], key=lambda x: x["adapt_score"], reverse=True)[:STYLE_TOP_N],
+        "平衡型": sorted([x for x in out_list if x["down_strategy"] == "balanced"], key=lambda x: x["suitability_score"], reverse=True)[:STYLE_TOP_N],
+        "进取型": sorted([x for x in out_list if x["down_strategy"] == "min"], key=lambda x: x["liquid_asset_end_wan"], reverse=True)[:STYLE_TOP_N],
     }
 
 # =====================================================================
 # 🚀 FastAPI 接口
 # =====================================================================
-app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V5.2")
+app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V5.3")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -360,16 +390,18 @@ def simulate_relative(req: SimulationRequest):
 
     for ry in RENT_CANDIDATES:
         for ly in LOAN_CANDIDATES:
-            total += 1
             if ly > SIM_TOTAL_YEARS - ry:
                 sk_loan += 1
                 continue
             
-            res = engine.single_scenario_sim(ry, ly)
-            if res is None:
-                sk_down += 1 
-            else:
-                result_list.append(res)
+            # 对每个租贷年限组合，遍历 3 种首付策略
+            for ds in DOWN_STRATEGIES:
+                total += 1
+                res = engine.single_scenario_sim(ry, ly, ds)
+                if res is None:
+                    sk_down += 1 
+                else:
+                    result_list.append(res)
 
     if not result_list:
         raise HTTPException(400, f"无可行方案：共尝试 {total} 组；{sk_down} 组因首付不足或支出占比超 70% 触发风控红线被剔除，{sk_loan} 组贷款年限超限。建议提高首付或增加收入。")
@@ -407,7 +439,7 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
     base_payload = req.model_dump()
     all_candidates = []
     feasible_by_level = {}
-    seen_zero_rent_combos = set() # 专门用于对0年租房进行去重
+    seen_zero_rent_combos = set() 
 
     LOAN_SCHEDULE_CACHE.clear()
     engine = HousingFinanceEngine(SimulationRequest(**base_payload))
@@ -415,25 +447,22 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
     for level in RENT_LEVELS_FOR_ABSOLUTE:
         engine.set_base_rent(level)
         cnt = 0
-        # 坚决保留 0 到 20 的全组合遍历
         for ry in RENT_CANDIDATES:
             for ly in LOAN_CANDIDATES:
                 if ly > SIM_TOTAL_YEARS - ry: continue
                 
-                # 核心去重：当租房年限为0时，因为不管什么租金档位，根本没租房，所以结果一样。
-                # 为了避免同一方案被计算8次，我们仅在第一次遇到此 (0, ly) 组合时放行，后续档位直接跳过。
-                if ry == 0:
-                    combo_key = (ry, ly)
-                    if combo_key in seen_zero_rent_combos:
-                        continue
-                    seen_zero_rent_combos.add(combo_key)
+                for ds in DOWN_STRATEGIES:
+                    if ry == 0:
+                        combo_key = (ry, ly, ds)
+                        if combo_key in seen_zero_rent_combos:
+                            continue
+                        seen_zero_rent_combos.add(combo_key)
 
-                res = engine.single_scenario_sim(ry, ly)
-                if res is not None:
-                    # 如果租房年限为0，强制归一化其租金档为0
-                    res["rent_level"] = 0 if ry == 0 else level
-                    all_candidates.append(res)
-                    cnt += 1
+                    res = engine.single_scenario_sim(ry, ly, ds)
+                    if res is not None:
+                        res["rent_level"] = 0 if ry == 0 else level
+                        all_candidates.append(res)
+                        cnt += 1
         feasible_by_level[str(level)] = cnt
 
     if not all_candidates:
@@ -466,7 +495,7 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         "top_adapt": sorted(out_list, key=lambda x: x["adapt_score"], reverse=True)[:TOP_N],
         "top_comfort": sorted(out_list, key=lambda x: x["comfort_score"], reverse=True)[:TOP_N],
         "style_boards": build_style_boards(out_list),
-        "cross_level_note": "绝对寻优模式：对 0 至 20 年租期的所有组合进行了全遍历，并对租期为0年的组合自动剥离了无意义的租金档位差异。",
+        "cross_level_note": "绝对寻优模式：已启用多维首付策略自动组合。",
         "skipped_summary": {"feasible_by_rent_level": feasible_by_level}
     }
 
