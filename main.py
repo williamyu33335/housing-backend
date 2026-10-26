@@ -16,8 +16,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # 🌐 全局常量与配置
 # =====================================================================
 SIM_TOTAL_YEARS = 30
-RENT_CANDIDATES = list(range(0, 21))
-LOAN_CANDIDATES = list(range(5, 31))
+RENT_CANDIDATES = list(range(0, 21)) # 完整保留 0 到 20 年
+LOAN_CANDIDATES = list(range(5, 31)) # 完整保留 5 到 30 年
 RENT_LEVELS_FOR_ABSOLUTE = [1200, 1500, 1800, 2200, 2600, 3000, 3500, 4000]
 
 TOP_N = 20
@@ -51,10 +51,9 @@ MODEL_ASSUMPTIONS = [
     "抗风险稳健度算法升级：基于生命周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算，越安全得分越高",
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
     "税后收入、基础生活开销恒定，不引入薪资上涨与物价通胀",
-    "绝对模式采用离散租金档位抽样遍历，求得近似全局最优解"
+    "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期，当租房年限为0时自动合并冗余方案以避免权重污染"
 ]
 
-# 🚨 修复了所有区域的精准经纬度
 NANNING_REGIONS = [
     {"name": "青秀区", "lat": 22.79, "lng": 108.38, "house_ref": 140, "rent_ref": 3000, "desc": "核心城区，配套完善，名校云集"},
     {"name": "西乡塘区", "lat": 22.84, "lng": 108.28, "house_ref": 85, "rent_ref": 1600, "desc": "科教片区，高校林立，生活成本低"},
@@ -333,7 +332,7 @@ def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
 # =====================================================================
 # 🚀 FastAPI 接口
 # =====================================================================
-app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V4.9")
+app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V5.2")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -355,7 +354,7 @@ def simulate_relative(req: SimulationRequest):
     start_time = time.time()
     engine = HousingFinanceEngine(req)
     result_list = []
-    sk_down, sk_loan, sk_redline, total = 0, 0, 0, 0
+    sk_down, sk_loan, total = 0, 0, 0
 
     LOAN_SCHEDULE_CACHE.clear()
 
@@ -408,21 +407,31 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
     base_payload = req.model_dump()
     all_candidates = []
     feasible_by_level = {}
+    seen_zero_rent_combos = set() # 专门用于对0年租房进行去重
 
     LOAN_SCHEDULE_CACHE.clear()
-
-    base_payload["rent_monthly_base"] = RENT_LEVELS_FOR_ABSOLUTE[0]
     engine = HousingFinanceEngine(SimulationRequest(**base_payload))
 
     for level in RENT_LEVELS_FOR_ABSOLUTE:
         engine.set_base_rent(level)
         cnt = 0
+        # 坚决保留 0 到 20 的全组合遍历
         for ry in RENT_CANDIDATES:
             for ly in LOAN_CANDIDATES:
                 if ly > SIM_TOTAL_YEARS - ry: continue
+                
+                # 核心去重：当租房年限为0时，因为不管什么租金档位，根本没租房，所以结果一样。
+                # 为了避免同一方案被计算8次，我们仅在第一次遇到此 (0, ly) 组合时放行，后续档位直接跳过。
+                if ry == 0:
+                    combo_key = (ry, ly)
+                    if combo_key in seen_zero_rent_combos:
+                        continue
+                    seen_zero_rent_combos.add(combo_key)
+
                 res = engine.single_scenario_sim(ry, ly)
                 if res is not None:
-                    res["rent_level"] = level
+                    # 如果租房年限为0，强制归一化其租金档为0
+                    res["rent_level"] = 0 if ry == 0 else level
                     all_candidates.append(res)
                     cnt += 1
         feasible_by_level[str(level)] = cnt
@@ -457,7 +466,7 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         "top_adapt": sorted(out_list, key=lambda x: x["adapt_score"], reverse=True)[:TOP_N],
         "top_comfort": sorted(out_list, key=lambda x: x["comfort_score"], reverse=True)[:TOP_N],
         "style_boards": build_style_boards(out_list),
-        "cross_level_note": "绝对寻优模式：对全部租金档位下的可行方案合并为一个全集，统一做极值归一化与熵权赋权。",
+        "cross_level_note": "绝对寻优模式：对 0 至 20 年租期的所有组合进行了全遍历，并对租期为0年的组合自动剥离了无意义的租金档位差异。",
         "skipped_summary": {"feasible_by_rent_level": feasible_by_level}
     }
 
