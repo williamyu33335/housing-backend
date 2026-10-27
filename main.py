@@ -153,11 +153,6 @@ class SimulationRequest(BaseModel):
     # 购房摩擦成本
     purchase_tax_rate: float = Field(ge=0, default=2.5)
 
-    # 汽车变量
-    buy_car: bool = Field(default=False)
-    car_total_wan: float = Field(ge=0, default=0)
-    car_loan_year: int = Field(ge=0, default=0)
-    car_monthly_expense: float = Field(ge=0, default=0)
 
     # 金融假设
     housing_fund_pct: float = Field(ge=0, le=24, default=16)
@@ -312,7 +307,7 @@ class HousingFinanceEngine:
             if self.buy_car and t == car_buy_month_idx:
                 if remain_cash < car_down:
                     return None
-            remain_cash -= car_down
+                remain_cash -= car_down
 
             year_idx = t // 12
             current_income = self.base_income * ((1 + self.income_growth_rate) ** year_idx)
@@ -596,8 +591,11 @@ async def validation_err_handler(request: Request, exc: RequestValidationError):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logging.exception("全局异常")
+    # 🌟 强制带上跨域头，防止报错被浏览器当成跨域拦截
     return JSONResponse(
-        status_code=500, content={"code": 500, "detail": f"服务计算异常: {str(exc)}"}
+        status_code=500, 
+        content={"code": 500, "detail": f"服务计算异常: {str(exc)}"},
+        headers={"Access-Control-Allow-Origin": "*"}
     )
 
 
