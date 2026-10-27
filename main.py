@@ -196,6 +196,7 @@ class HousingFinanceEngine:
         self.car_total_yuan = req.car_total_wan * 10000
         self.car_loan_months = req.car_loan_year * 12
         self.car_monthly_expense = req.car_monthly_expense
+        self.car_buy_year = req.car_buy_year
 
         # 假设车贷年利率 5%（写死，也可以后面抽出来做变量）
         self.car_loan_rate = 0.05 / 12.0
