@@ -35,6 +35,66 @@ RENT_SALE_RATIO = 0.03
 
 SUITABILITY_WEIGHTS = {"comfort": 0.30, "adapt": 0.30, "happiness": 0.25, "time": 0.15}
 
+# =====================================================================
+# 🏙️ 空间异质性系数（V2.0 核心）
+# ---------------------------------------------------------------------
+# 队长最核心的洞察：“同样的钱，在南宁和在北上广，买到的是两种人生。”
+# 不把城市能级折算进模型，全国 WebGIS 就只是一张好看的壁纸。
+# =====================================================================
+CITY_TIER_LABELS = {
+    1: "超一线",
+    2: "新一线",
+    3: "二线",
+    4: "三线",
+    5: "四线及以下",
+}
+
+# 城市能级 → 资源溢价贴现（医疗/教育/就业天花板的相对价值，1.0 为天花板）
+CITY_RESOURCE_INDEX = {1: 1.00, 2: 0.94, 3: 0.88, 4: 0.80, 5: 0.72}
+
+# 城市能级 → 生活成本指数（同样 2200 元，在超一线只能算“活着”）
+CITY_COST_INDEX = {1: 1.28, 2: 1.14, 3: 1.00, 4: 0.90, 5: 0.82}
+
+# 通勤时间成本折现：单程分钟数 → 0~100 分（15 分钟满分区，60 分钟后加速惩罚）
+COMMUTE_FREE_MIN = 15
+COMMUTE_PENALTY_PER_MIN = 1.25
+COMMUTE_HEAVY_MIN = 60
+COMMUTE_HEAVY_EXTRA = 0.8
+
+# 空间舒适度、通勤得分在最终五维中的占比
+COMFORT_SPATIAL_WEIGHT = 0.55
+TIME_COMMUTE_WEIGHT = 0.55
+
+FAMILY_LABELS = {1: "单身贵族", 2: "二人世界", 3: "三口之家"}
+
+# =====================================================================
+# 🧭 风险姿态（V6.1）
+# ---------------------------------------------------------------------
+# 队长定调：70% 红线是默认承诺，不能被“优化”掉；
+# 90% 只属于一条显式的、需要用户自己按下的分支——悬崖方案。
+# =====================================================================
+RISK_MODES = {
+    "steady": {
+        "label": "稳健红线",
+        "loan_cap": 0.70,
+        "rent_cap": None,   # 租房期只受现金流约束，压力通过抗风险得分体现
+        "note": "70% 还贷红线 + 隐形支出摊销，为生病、失业、人情往来留出 30% 的呼吸空间",
+    },
+    "aggressive": {
+        "label": "激进·悬崖方案",
+        "loan_cap": 0.90,
+        "rent_cap": 0.90,   # 擦着生存线过，不给自己留退路
+        "note": "90% 生存线：用安全垫换时间，任何一次意外都可能让你踩空",
+    },
+}
+
+# 激进模式下可选的“节衣缩食”：把可支配生活开销压缩到这个比例
+SQUEEZE_EXPENSE_FACTOR = 0.80
+
+# 隐形支出：不作为默认值强加给用户，默认 0。
+# 我们只负责提醒“请自己估算红包/旅行/医疗/意外”，由用户决定填多少。
+DEFAULT_HIDDEN_EXPENSE_MONTH = 0.0
+
 ENTROPY_INDICATORS = [
     ("asset", "liquid_asset_end_wan"),
     ("adapt", "adapt_score"),
@@ -55,6 +115,15 @@ MODEL_ASSUMPTIONS = [
     "首付策略升级：输入的首付比例仅作为最低门槛，系统会智能遍历最低首付、折中首付、极限高首付（掏空现金）策略",
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
     "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期",
+    "空间异质性折算：房价按片区真实单价（元/㎡）折算可购面积，居住舒适度50%以上由“人均居住面积×城市资源溢价”决定，拒绝用总价幻想豪宅",
+    "通勤折现：租房期与还贷期分别使用各自的单程通勤分钟，按生命周期加权得到时间效率；单程15分钟为满分，60分钟后进入加速惩罚区",
+    "通勤交通费按月计入现金流：租房期与买房期分别扣减，默认按 120元 + 4元/分钟 估算，可显式覆盖",
+    "相对收入位置：结余幸福感乘以本地收入分位系数（你的收入/城市平均薪资），同样的结余在不同城市体感完全不同",
+    "稳健模式：70%红线只用于还贷期；租房期不设硬顶，租房压力通过抗风险得分体现",
+    "激进模式（悬崖方案）：租贷两期都放宽到90%生存线，追求最快时间效率，代价是几乎没有安全垫",
+    "隐形支出不设默认值：红包、旅行、医疗、意外、人情往来由用户自行估算（建议覆盖年度人情与意外），填 0 表示暂不计入",
+    "30年期末流动资产额外给出“按今日物价折算的真实购买力”，戳破名义资产的纸面幻觉",
+    "房价按当前名义价格静止处理，不做增值假设：我们只推演现金流与真实居住体感，不制造“房价永远涨”的纸面财富",
 ]
 
 NANNING_REGIONS = [
@@ -64,6 +133,8 @@ NANNING_REGIONS = [
         "lng": 108.38,
         "house_ref": 140,
         "rent_ref": 3000,
+        "price_sqm": 15500,
+        "commute_min": 15,
         "desc": "核心城区，配套完善，名校云集",
     },
     {
@@ -72,6 +143,8 @@ NANNING_REGIONS = [
         "lng": 108.28,
         "house_ref": 85,
         "rent_ref": 1600,
+        "price_sqm": 9500,
+        "commute_min": 28,
         "desc": "科教片区，高校林立，生活成本低",
     },
     {
@@ -80,6 +153,8 @@ NANNING_REGIONS = [
         "lng": 108.28,
         "house_ref": 78,
         "rent_ref": 1500,
+        "price_sqm": 8700,
+        "commute_min": 30,
         "desc": "老城区，刚需友好，烟火气浓",
     },
     {
@@ -88,6 +163,8 @@ NANNING_REGIONS = [
         "lng": 108.33,
         "house_ref": 92,
         "rent_ref": 1900,
+        "price_sqm": 10200,
+        "commute_min": 22,
         "desc": "老城商圈，火车站附近，交通便利",
     },
     {
@@ -96,6 +173,8 @@ NANNING_REGIONS = [
         "lng": 108.36,
         "house_ref": 110,
         "rent_ref": 2300,
+        "price_sqm": 12200,
+        "commute_min": 25,
         "desc": "五象新区核心地带，发展潜力大",
     },
     {
@@ -104,6 +183,8 @@ NANNING_REGIONS = [
         "lng": 108.48,
         "house_ref": 82,
         "rent_ref": 1600,
+        "price_sqm": 9100,
+        "commute_min": 35,
         "desc": "五象东扩区，价格洼地，生态宜居",
     },
     {
@@ -112,6 +193,8 @@ NANNING_REGIONS = [
         "lng": 108.27,
         "house_ref": 55,
         "rent_ref": 1200,
+        "price_sqm": 6100,
+        "commute_min": 55,
         "desc": "教育园区，大学城，价格极低",
     },
     {
@@ -120,6 +203,8 @@ NANNING_REGIONS = [
         "lng": 108.35,
         "house_ref": 120,
         "rent_ref": 2500,
+        "price_sqm": 13300,
+        "commute_min": 20,
         "desc": "自治区级重点发展新区，总部基地",
     },
 ]
@@ -152,6 +237,26 @@ class SimulationRequest(BaseModel):
 
     # 购房摩擦成本
     purchase_tax_rate: float = Field(ge=0, default=2.5)
+
+    # 🧭 V6.1 风险姿态与隐形支出
+    risk_mode: str = Field(pattern="^(steady|aggressive)$", default="steady")
+    squeeze_life: bool = Field(default=False)   # 仅激进模式生效：节衣缩食
+    hidden_expense_month: float = Field(
+        ge=0, default=DEFAULT_HIDDEN_EXPENSE_MONTH
+    )  # 红包/旅行/医疗/意外 的月度摊销
+
+    # 🏙️ V2.0 空间异质性参数（前端由城市库与几何通勤计算注入）
+    city_name: str = Field(default="南宁")
+    city_tier: int = Field(ge=1, le=5, default=3)
+    city_avg_price_sqm: float = Field(gt=0, default=10500)
+    city_avg_rent_sqm: float = Field(gt=0, default=27)
+    city_avg_salary: float = Field(gt=0, default=7200)
+    district_price_sqm: float = Field(gt=0, default=10500)
+    family_size: int = Field(ge=1, le=6, default=2)
+    rent_commute_min: float = Field(ge=0, le=180, default=20)
+    own_commute_min: float = Field(ge=0, le=180, default=40)
+    rent_transport_month: float = Field(ge=0, default=0)
+    own_transport_month: float = Field(ge=0, default=0)
 
 
     # 金融假设
@@ -188,7 +293,18 @@ class HousingFinanceEngine:
         self.base_income = req.monthly_income_net
         self.income_growth_rate = req.annual_income_growth_pct / 100.0  # 动态收入
 
-        self.month_base_exp = req.monthly_expense
+        # =============================================================
+        # 🧭 V6.1 风险姿态：红线不是参数，是承诺
+        # =============================================================
+        self.risk_mode = req.risk_mode if req.risk_mode in RISK_MODES else "steady"
+        self.risk_conf = RISK_MODES[self.risk_mode]
+        self.loan_cap = self.risk_conf["loan_cap"]
+        self.rent_cap = self.risk_conf["rent_cap"]
+        self.squeeze_life = bool(req.squeeze_life) and self.risk_mode == "aggressive"
+        self.expense_factor = SQUEEZE_EXPENSE_FACTOR if self.squeeze_life else 1.0
+        self.hidden_expense_month = req.hidden_expense_month
+
+        self.month_base_exp = req.monthly_expense * self.expense_factor
         self.month_property = req.property_fee_monthly
         self.month_fund_inflow = self.base_income * (req.housing_fund_pct / 100.0)
 
@@ -212,6 +328,128 @@ class HousingFinanceEngine:
         self.repay_kind = req.repay_kind
         self.purchase_tax_rate = req.purchase_tax_rate / 100.0
 
+        # =============================================================
+        # 🏙️ V2.0 空间异质性：把“地域”折算成可计算的系数
+        # =============================================================
+        self.city_name = req.city_name
+        self.city_tier = req.city_tier
+        self.city_avg_price_sqm = req.city_avg_price_sqm
+        self.city_avg_rent_sqm = req.city_avg_rent_sqm
+        self.city_avg_salary = req.city_avg_salary
+        self.district_price_sqm = req.district_price_sqm
+        self.family_size = max(1, req.family_size)
+
+        # 总价 → 真实可购面积（㎡）→ 人均居住面积（㎡/人）
+        # 这是“85 万在南宁是两居，在北京是远郊老破小”的数学表达
+        self.own_area_sqm = self.house_total_yuan / max(self.district_price_sqm, EPS_YUAN)
+        self.area_per_person = self.own_area_sqm / self.family_size
+
+        # 居住体感分：10㎡/人 = 30 分，45㎡/人 = 100 分（线性，封顶）
+        self.own_comfort_spatial = min(
+            100.0, max(0.0, 30.0 + (self.area_per_person - 10.0) * 2.0)
+        )
+
+        # 当地“体面两居”的月租基准（70㎡），用于衡量租房阶段的相对体感
+        self.local_2bed_rent = max(self.city_avg_rent_sqm * 70.0, EPS_YUAN)
+
+        # 通勤：租房期与买房期分别计算，时间成本按生命周期加权
+        self.rent_commute_min = req.rent_commute_min
+        self.own_commute_min = req.own_commute_min
+        self.rent_commute_score = self.commute_score(req.rent_commute_min)
+        self.own_commute_score = self.commute_score(req.own_commute_min)
+        self.rent_transport_month = (
+            req.rent_transport_month
+            if req.rent_transport_month > 0
+            else 120.0 + 4.0 * req.rent_commute_min
+        )
+        self.own_transport_month = (
+            req.own_transport_month
+            if req.own_transport_month > 0
+            else 120.0 + 4.0 * req.own_commute_min
+        )
+
+        # 相对收入位置：你在本地到底是“人上人”还是“被平均”
+        self.rel_income = self.base_income / max(self.city_avg_salary, EPS_YUAN)
+        self.cost_index = CITY_COST_INDEX.get(self.city_tier, 1.0)
+        self.resource_index = CITY_RESOURCE_INDEX.get(self.city_tier, 0.85)
+
+        # 通勤时间货币化：按当地时薪折算（21.75 工作日 × 8 小时）
+        self.hourly_wage = self.base_income / (21.75 * 8.0)
+
+    @staticmethod
+    def commute_score(minutes: float) -> float:
+        """单程通勤分钟 → 0~100 分（15 分钟满分，60 分钟后加速惩罚）。"""
+        m = max(0.0, float(minutes))
+        penalty = max(0.0, m - COMMUTE_FREE_MIN) * COMMUTE_PENALTY_PER_MIN
+        if m > COMMUTE_HEAVY_MIN:
+            penalty += (m - COMMUTE_HEAVY_MIN) * COMMUTE_HEAVY_EXTRA
+        return max(5.0, min(100.0, 100.0 - penalty))
+
+    def risk_summary(self) -> Dict:
+        return {
+            "mode": self.risk_mode,
+            "label": self.risk_conf["label"],
+            "loan_cap_pct": int(round(self.loan_cap * 100)),
+            "rent_cap_pct": int(round(self.rent_cap * 100)) if self.rent_cap is not None else None,
+            "squeeze_life": self.squeeze_life,
+            "expense_factor": self.expense_factor,
+            "hidden_expense_month": self.hidden_expense_month,
+            "note": self.risk_conf["note"],
+        }
+
+    def spatial_summary(self) -> Dict:
+        """输出城市级空间折算结果（与具体租贷组合无关，供前端叙事使用）。"""
+        infl_factor = (1 + self.consumption_inflation) ** SIM_TOTAL_YEARS
+        pir = self.house_total_yuan / max(self.base_income * 12.0, EPS_YUAN)
+        rent_yield = (
+            self.base_rent * 12.0 / self.house_total_yuan * 100.0
+            if self.house_total_yuan > 0
+            else 0.0
+        )
+        commute_cost_month = (
+            self.own_commute_min * 2 * 22 / 60.0 * self.hourly_wage
+        )
+        commute_cost_month_rent = (
+            self.rent_commute_min * 2 * 22 / 60.0 * self.hourly_wage
+        )
+        return {
+            "city_name": self.city_name,
+            "city_tier": self.city_tier,
+            "tier_label": CITY_TIER_LABELS.get(self.city_tier, "未知"),
+            "resource_index": round(self.resource_index, 3),
+            "cost_index": round(self.cost_index, 3),
+            "district_price_sqm": round(self.district_price_sqm, 1),
+            "city_avg_price_sqm": round(self.city_avg_price_sqm, 1),
+            "city_avg_salary": round(self.city_avg_salary, 1),
+            "rel_income": round(self.rel_income, 3),
+            "family_size": self.family_size,
+            "family_label": FAMILY_LABELS.get(self.family_size, "自定义"),
+            "own_area_sqm": round(self.own_area_sqm, 1),
+            "area_per_person": round(self.area_per_person, 1),
+            "own_comfort_spatial": round(self.own_comfort_spatial, 2),
+            "local_2bed_rent": round(self.local_2bed_rent, 0),
+            "commute": {
+                "rent_min": self.rent_commute_min,
+                "own_min": self.own_commute_min,
+                "rent_score": round(self.rent_commute_score, 2),
+                "own_score": round(self.own_commute_score, 2),
+                "time_cost_month": round(commute_cost_month, 0),
+                "time_cost_month_rent": round(commute_cost_month_rent, 0),
+                "transport_month": {
+                    "rent": round(self.rent_transport_month, 0),
+                    "own": round(self.own_transport_month, 0),
+                },
+            },
+            "pir": round(pir, 2),
+            "rent_yield_pct": round(rent_yield, 3),
+            "inflation_factor_30y": round(infl_factor, 3),
+            "area_note": (
+                f"按 {self.district_price_sqm:,.0f} 元/㎡ 折算，"
+                f"{self.house_total_yuan / 10000:.0f} 万可购约 {self.own_area_sqm:.1f} ㎡，"
+                f"人均 {self.area_per_person:.1f} ㎡"
+            ),
+        }
+
     def set_base_rent(self, new_rent: float):
         self.base_rent = new_rent
 
@@ -232,7 +470,9 @@ class HousingFinanceEngine:
             base_15 = self.base_income * ((1 + self.income_growth_rate) ** 5) * ((1 + self.income_growth_rate / 2) ** 10)
             return base_15 * (1.005 ** (year_idx - 15)) # 15年后象征性涨 0.5%
     def get_current_expense(self, year_idx: int) -> float:
-        return self.month_base_exp * ((1 + self.consumption_inflation) ** year_idx)
+        # 生活开销 + 隐形支出（红包/旅行/医疗/意外），一起随通胀膨胀
+        base = self.month_base_exp + self.hidden_expense_month
+        return base * ((1 + self.consumption_inflation) ** year_idx)
 
     def build_combo_loan_schedule(self, loan_year: int, total_loan_principal_yuan: float) -> List[float]:
         if total_loan_principal_yuan <= EPS_YUAN:
@@ -293,6 +533,7 @@ class HousingFinanceEngine:
         max_deficit = 0.0
         total_months_surplus_rate = 0.0
         max_outflow_ratio = 0.0
+        min_cash = self.init_saving
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
@@ -306,15 +547,26 @@ class HousingFinanceEngine:
             current_rent = self.base_rent * ((1 + self.rent_inflation) ** year_idx)
 
             car_cost = get_car_cost(t)
-            real_monthly_outflow = self.get_current_expense(year_idx) + current_rent + car_cost
+            # 🏙️ 通勤交通费：租房期也要算进去，别把“住得远”当成免费的
+            real_monthly_outflow = (
+                self.get_current_expense(year_idx)
+                + current_rent
+                + car_cost
+                + self.rent_transport_month
+            )
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
+            # 稳健模式不设租房硬顶（压力交给抗风险得分）；
+            # 悬崖模式用 90% 生存线兜底，擦边通过。
+            if self.rent_cap is not None and ratio > self.rent_cap:
+                return None
 
             monthly_net = (current_income + current_fund) - real_monthly_outflow
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
+            if remain_cash < min_cash: min_cash = remain_cash
 
         purchase_tax_yuan = self.house_total_yuan * self.purchase_tax_rate
         total_upfront_needed = self.min_down_payment_yuan + purchase_tax_yuan
@@ -349,16 +601,17 @@ class HousingFinanceEngine:
             actual_out_of_pocket = loan_schedule[m] - fund_deduct
             car_cost = get_car_cost(current_idx)
             
-            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + actual_out_of_pocket + car_cost
+            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + actual_out_of_pocket + car_cost + self.own_transport_month
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
-            if real_monthly_outflow > (current_income * 0.70): return None
+            if real_monthly_outflow > (current_income * self.loan_cap): return None
 
             monthly_net = current_income - real_monthly_outflow
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
+            if remain_cash < min_cash: min_cash = remain_cash
 
         # 阶段3：自由期
         rest_month = SIM_TOTAL_YEARS * 12 - rent_month - loan_month
@@ -372,7 +625,7 @@ class HousingFinanceEngine:
             current_income = self.get_current_income(year_idx) # 🌟 调用新算法
             car_cost = get_car_cost(current_idx)
             
-            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + car_cost 
+            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + car_cost + self.own_transport_month
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
@@ -380,6 +633,7 @@ class HousingFinanceEngine:
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             remain_cash = max(0.0, remain_cash)
+            if remain_cash < min_cash: min_cash = remain_cash
 
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
@@ -389,13 +643,43 @@ class HousingFinanceEngine:
         rent_comfort = 82.0 if implied_rent_house >= target_house else 60.0 + 22.0 * (implied_rent_house / target_house)
         buy_comfort = 88.0
         occupied_years = SIM_TOTAL_YEARS - rent_year
-        comfort_score = (rent_year * rent_comfort + occupied_years * buy_comfort) / SIM_TOTAL_YEARS
+        comfort_base = (rent_year * rent_comfort + occupied_years * buy_comfort) / SIM_TOTAL_YEARS
+
+        # 🏙️ 空间居住体感：租房期看“这份租金在本地能租到什么”，买房期看“人均真实面积”
+        rent_ratio_local = self.base_rent / self.local_2bed_rent
+        rent_comfort_spatial = min(98.0, max(40.0, 45.0 + 45.0 * min(rent_ratio_local, 1.8)))
+        own_month = SIM_TOTAL_YEARS * 12 - rent_month
+        comfort_spatial_life = (
+            rent_month * rent_comfort_spatial + own_month * self.own_comfort_spatial
+        ) / (SIM_TOTAL_YEARS * 12)
+        comfort_score = min(
+            100.0,
+            max(
+                0.0,
+                comfort_base * (1 - COMFORT_SPATIAL_WEIGHT)
+                + comfort_spatial_life * COMFORT_SPATIAL_WEIGHT,
+            ),
+        )
 
         avg_surplus_rate = total_months_surplus_rate / (SIM_TOTAL_YEARS * 12)
-        happiness = 100.0 if avg_surplus_rate >= 0.50 else max(0.0, (avg_surplus_rate / 0.50) * 100)
+        happiness_base = 100.0 if avg_surplus_rate >= 0.50 else max(0.0, (avg_surplus_rate / 0.50) * 100)
+        # 相对收入位置：同样的结余，在平均薪资 1.4 万的城市和 7 千的城市，体感完全不同
+        rel_mult = min(1.15, max(0.85, 0.85 + 0.15 * self.rel_income))
+        happiness = min(100.0, happiness_base * rel_mult)
 
+        # ⏱️ 时间效率：原有“租贷年限”得分 + 生命周期通勤得分（租房期/买房期分别计分）
         time_eff_raw = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
-        time_eff = 60.0 + time_eff_raw * 0.4
+        time_base = 60.0 + time_eff_raw * 0.4
+        commute_life = (
+            rent_month * self.rent_commute_score + own_month * self.own_commute_score
+        ) / (SIM_TOTAL_YEARS * 12)
+        time_eff = min(
+            100.0,
+            max(
+                0.0,
+                time_base * (1 - TIME_COMMUTE_WEIGHT) + commute_life * TIME_COMMUTE_WEIGHT,
+            ),
+        )
 
         return {
             "rent_year": rent_year, "loan_year": loan_year, "down_strategy": down_strategy,
@@ -403,7 +687,15 @@ class HousingFinanceEngine:
             "down_payment_wan": round(actual_down_payment_yuan / 10000, 2),
             "loan_principal_wan": round(actual_loan_principal / 10000, 2),
             "liquid_asset_end_wan": round(remain_cash / 10000, 2),
+            # 💸 名义资产 × 通胀折现 = 真实购买力，戳破“30年后千万富翁”的幻觉
+            "real_asset_wan": round(
+                remain_cash / ((1 + self.consumption_inflation) ** SIM_TOTAL_YEARS) / 10000, 2
+            ),
+            "min_cash_wan": round(min_cash / 10000, 2),
             "max_deficit_wan": round(max_deficit / 10000, 2),
+            "comfort_spatial": round(comfort_spatial_life, 2),
+            "rent_comfort_spatial": round(rent_comfort_spatial, 2),
+            "commute_lifecycle": round(commute_life, 2),
             "risk_score": round(100.0 - adapt_score, 2),
             "adapt_score": round(adapt_score, 2),
             "comfort_score": round(comfort_score, 2),
@@ -524,7 +816,7 @@ def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
 # =====================================================================
 # 🚀 FastAPI 接口
 # =====================================================================
-app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V5.3")
+app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V6.0 · 空间异质性引擎")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -561,6 +853,7 @@ def simulate_relative(req: SimulationRequest):
 
     start_time = time.time()
     engine = HousingFinanceEngine(req)
+    spatial_payload = engine.spatial_summary()
     result_list = []
     sk_down, sk_loan, total = 0, 0, 0
 
@@ -612,6 +905,8 @@ def simulate_relative(req: SimulationRequest):
         "mode": "relative",
         "warning": warning,
         "assumptions": MODEL_ASSUMPTIONS,
+        "spatial": spatial_payload,
+        "risk": engine.risk_summary(),
         "entropy_result": ew,
         "all_scheme": out_list,
         "top_comprehensive": out_list[:TOP_N],
@@ -641,6 +936,7 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
 
     LOAN_SCHEDULE_CACHE.clear()
     engine = HousingFinanceEngine(SimulationRequest(**base_payload))
+    spatial_payload = engine.spatial_summary()
 
     for level in RENT_LEVELS_FOR_ABSOLUTE:
         engine.set_base_rent(level)
@@ -694,6 +990,8 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         "mode": "absolute",
         "warning": warning,
         "assumptions": MODEL_ASSUMPTIONS,
+        "spatial": spatial_payload,
+        "risk": engine.risk_summary(),
         "entropy_result": ew,
         "global_best": out_list[0],
         "rent_level_board": rent_board,
@@ -723,3 +1021,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
