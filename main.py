@@ -191,14 +191,12 @@ class HousingFinanceEngine:
         self.month_property = req.property_fee_monthly
         self.month_fund_inflow = self.base_income * (req.housing_fund_pct / 100.0)
 
-        # 汽车相关
+        # 🌟 汽车相关（修复报错！）
         self.buy_car = req.buy_car
+        self.car_buy_year = req.car_buy_year  # 补上这一行，解决 500 报错
         self.car_total_yuan = req.car_total_wan * 10000
         self.car_loan_months = req.car_loan_year * 12
         self.car_monthly_expense = req.car_monthly_expense
-        self.car_buy_year = req.car_buy_year
-
-        # 假设车贷年利率 5%（写死，也可以后面抽出来做变量）
         self.car_loan_rate = 0.05 / 12.0
 
         self.base_rent = req.rent_monthly_base
@@ -210,37 +208,41 @@ class HousingFinanceEngine:
         self.prov_loan_rate = req.provident_loan_rate_pct / 100.0
         self.prov_cap_yuan = req.provident_loan_cap_wan * 10000
         self.repay_kind = req.repay_kind
-
         self.purchase_tax_rate = req.purchase_tax_rate / 100.0
 
     def set_base_rent(self, new_rent: float):
         self.base_rent = new_rent
 
-    def build_combo_loan_schedule(
-        self, loan_year: int, total_loan_principal_yuan: float
-    ) -> List[float]:
-        """🌟 全新：组合贷还款计划生成器"""
+    # 🌟 新增：核心薪资增长算法（分段式）
+    def get_current_income(self, year_idx: int) -> float:
+        """
+        重构薪资增长：
+        0-5年：按设定的增长率 (如 5%)
+        6-15年：增长率减半 (如 2.5%)
+        15年以后：几乎停滞 (0.5%)
+        """
+        if year_idx <= 5:
+            return self.base_income * ((1 + self.income_growth_rate) ** year_idx)
+        elif year_idx <= 15:
+            base_5 = self.base_income * ((1 + self.income_growth_rate) ** 5)
+            return base_5 * ((1 + self.income_growth_rate / 2) ** (year_idx - 5))
+        else:
+            base_15 = self.base_income * ((1 + self.income_growth_rate) ** 5) * ((1 + self.income_growth_rate / 2) ** 10)
+            return base_15 * (1.005 ** (year_idx - 15)) # 15年后象征性涨 0.5%
+
+    def build_combo_loan_schedule(self, loan_year: int, total_loan_principal_yuan: float) -> List[float]:
         if total_loan_principal_yuan <= EPS_YUAN:
             return [0.0] * (loan_year * 12)
 
-        # 1. 拆分公积金和商贷
         prov_loan_yuan = min(total_loan_principal_yuan, self.prov_cap_yuan)
         comm_loan_yuan = total_loan_principal_yuan - prov_loan_yuan
-
         n = loan_year * 12
 
-        # 2. 分别生成公积金和商贷的月供
         def calc_schedule(principal, year_rate):
-            if principal <= EPS_YUAN:
-                return [0.0] * n
+            if principal <= EPS_YUAN: return [0.0] * n
             month_rate = year_rate / 12.0
             if self.repay_kind == "equal_principal_interest":
-                m = (
-                    principal
-                    * month_rate
-                    * (1 + month_rate) ** n
-                    / ((1 + month_rate) ** n - 1)
-                )
+                m = principal * month_rate * (1 + month_rate) ** n / ((1 + month_rate) ** n - 1)
                 return [m] * n
             else:
                 principal_m = principal / n
@@ -253,21 +255,15 @@ class HousingFinanceEngine:
 
         prov_schedule = calc_schedule(prov_loan_yuan, self.prov_loan_rate)
         comm_schedule = calc_schedule(comm_loan_yuan, self.loan_year_rate)
-
-        # 3. 合并（每个月公积金月供 + 商贷月供）
         return [prov_schedule[i] + comm_schedule[i] for i in range(n)]
 
-    def single_scenario_sim(
-        self, rent_year: int, loan_year: int, down_strategy: str
-    ) -> Optional[Dict]:
-        if loan_year > (SIM_TOTAL_YEARS - rent_year):
-            return None
+    def single_scenario_sim(self, rent_year: int, loan_year: int, down_strategy: str) -> Optional[Dict]:
+        if loan_year > (SIM_TOTAL_YEARS - rent_year): return None
 
         rent_month = rent_year * 12
         loan_month = loan_year * 12
         remain_cash = self.init_saving
 
-        # 🌟 买车预计算
         car_down = 0.0
         car_monthly_mortgage = 0.0
         if self.buy_car:
@@ -275,27 +271,19 @@ class HousingFinanceEngine:
                 car_down = self.car_total_yuan
             else:
                 car_down = self.car_total_yuan * 0.3
-
             if self.car_loan_months > 0:
                 car_loan_principal = self.car_total_yuan * 0.7
-                car_monthly_mortgage = (
-                    car_loan_principal
-                    * self.car_loan_rate
-                    * (1 + self.car_loan_rate) ** self.car_loan_months
-                    / ((1 + self.car_loan_rate) ** self.car_loan_months - 1)
-                )
+                car_monthly_mortgage = (car_loan_principal * self.car_loan_rate * (1 + self.car_loan_rate) ** self.car_loan_months / ((1 + self.car_loan_rate) ** self.car_loan_months - 1))
 
-        car_buy_month_idx = self.car_buy_year * 12  # 🌟 获取买车月份
+        car_buy_month_idx = self.car_buy_year * 12 
 
-        # 🌟 辅助函数：计算某个月的车相关费用
         def get_car_cost(current_idx):
             cost = 0.0
-            if not self.buy_car:
-                return cost
+            if not self.buy_car: return cost
             if current_idx >= car_buy_month_idx:
-                cost += self.car_monthly_expense  # 养车费
+                cost += self.car_monthly_expense
                 if current_idx < car_buy_month_idx + self.car_loan_months:
-                    cost += car_monthly_mortgage  # 车贷
+                    cost += car_monthly_mortgage
             return cost
 
         max_deficit = 0.0
@@ -304,50 +292,38 @@ class HousingFinanceEngine:
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
-            # 判断当月是否买车
             if self.buy_car and t == car_buy_month_idx:
-                if remain_cash < car_down:
-                    return None
+                if remain_cash < car_down: return None
                 remain_cash -= car_down
 
             year_idx = t // 12
-            current_income = self.base_income * ((1 + self.income_growth_rate) ** year_idx)
+            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
             current_fund = current_income * (self.req.housing_fund_pct / 100.0)
             current_rent = self.base_rent * ((1 + self.rent_inflation) ** year_idx)
 
-            car_cost = get_car_cost(t)  # 🌟 使用辅助函数
+            car_cost = get_car_cost(t)
             real_monthly_outflow = self.month_base_exp + current_rent + car_cost
             ratio = real_monthly_outflow / current_income
-            if ratio > max_outflow_ratio:
-                
-                max_outflow_ratio = ratio
+            if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
             monthly_net = (current_income + current_fund) - real_monthly_outflow
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
-            if remain_cash < -EPS_YUAN:
-                return None
+            if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
 
-        # 首付+税费硬约束 (保持不变)
         purchase_tax_yuan = self.house_total_yuan * self.purchase_tax_rate
         total_upfront_needed = self.min_down_payment_yuan + purchase_tax_yuan
-        if remain_cash < total_upfront_needed - EPS_YUAN:
-            return None
+        if remain_cash < total_upfront_needed - EPS_YUAN: return None
 
-        # 首付策略逻辑 (保持不变)
         actual_down_payment_yuan = 0.0
         if down_strategy == "min":
             actual_down_payment_yuan = self.min_down_payment_yuan
         elif down_strategy == "max":
-            actual_down_payment_yuan = min(
-                remain_cash - purchase_tax_yuan, self.house_total_yuan
-            )
+            actual_down_payment_yuan = min(remain_cash - purchase_tax_yuan, self.house_total_yuan)
         elif down_strategy == "balanced":
             extra = (remain_cash - total_upfront_needed) * 0.5
-            actual_down_payment_yuan = min(
-                self.min_down_payment_yuan + extra, self.house_total_yuan
-            )
+            actual_down_payment_yuan = min(self.min_down_payment_yuan + extra, self.house_total_yuan)
 
         actual_loan_principal = self.house_total_yuan - actual_down_payment_yuan
         remain_cash -= actual_down_payment_yuan + purchase_tax_yuan
@@ -358,33 +334,26 @@ class HousingFinanceEngine:
         for m in range(loan_month):
             current_idx = rent_month + m
             if self.buy_car and current_idx == car_buy_month_idx:
-                if remain_cash < car_down:
-                    return None
+                if remain_cash < car_down: return None
                 remain_cash -= car_down
 
             year_idx = rent_year + (m // 12)
-            current_income = self.base_income * ((1 + self.income_growth_rate) ** year_idx)
+            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
             current_fund = current_income * (self.req.housing_fund_pct / 100.0)
 
             fund_deduct = min(current_fund, loan_schedule[m])
             actual_out_of_pocket = loan_schedule[m] - fund_deduct
-
             car_cost = get_car_cost(current_idx)
-            real_monthly_outflow = (
-                self.month_base_exp + self.month_property + actual_out_of_pocket + car_cost
-            )
+            
+            real_monthly_outflow = self.month_base_exp + self.month_property + actual_out_of_pocket + car_cost
             ratio = real_monthly_outflow / current_income
-            if ratio > max_outflow_ratio:
-                max_outflow_ratio = ratio
-
-            if real_monthly_outflow > (current_income * 0.70):
-                return None
+            if ratio > max_outflow_ratio: max_outflow_ratio = ratio
+            if real_monthly_outflow > (current_income * 0.70): return None
 
             monthly_net = current_income - real_monthly_outflow
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
-            if remain_cash < -EPS_YUAN:
-                return None
+            if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
 
         # 阶段3：自由期
@@ -392,58 +361,40 @@ class HousingFinanceEngine:
         for m in range(rest_month):
             current_idx = rent_month + loan_month + m
             if self.buy_car and current_idx == car_buy_month_idx:
-                if remain_cash < car_down:
-                    return None
+                if remain_cash < car_down: return None
                 remain_cash -= car_down
 
             year_idx = rent_year + loan_year + (m // 12)
-            current_income = self.base_income * ((1 + self.income_growth_rate) ** year_idx)
-
+            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
             car_cost = get_car_cost(current_idx)
+            
             real_monthly_outflow = self.month_base_exp + self.month_property + car_cost
             ratio = real_monthly_outflow / current_income
-            if ratio > max_outflow_ratio:
-                max_outflow_ratio = ratio
+            if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
             monthly_net = current_income - real_monthly_outflow
             total_months_surplus_rate += monthly_net / current_income
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             remain_cash = max(0.0, remain_cash)
-        # ======== 以下算分逻辑与原版一致 ========
+
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
 
         implied_rent_house = (self.base_rent * 12 / RENT_SALE_RATIO) / 10000
         target_house = self.req.house_total_wan
-        rent_comfort = (
-            82.0
-            if implied_rent_house >= target_house
-            else 60.0 + 22.0 * (implied_rent_house / target_house)
-        )
+        rent_comfort = 82.0 if implied_rent_house >= target_house else 60.0 + 22.0 * (implied_rent_house / target_house)
         buy_comfort = 88.0
         occupied_years = SIM_TOTAL_YEARS - rent_year
-        comfort_score = (
-            rent_year * rent_comfort + occupied_years * buy_comfort
-        ) / SIM_TOTAL_YEARS
+        comfort_score = (rent_year * rent_comfort + occupied_years * buy_comfort) / SIM_TOTAL_YEARS
 
         avg_surplus_rate = total_months_surplus_rate / (SIM_TOTAL_YEARS * 12)
-        happiness = (
-            100.0
-            if avg_surplus_rate >= 0.50
-            else max(0.0, (avg_surplus_rate / 0.50) * 100)
-        )
+        happiness = 100.0 if avg_surplus_rate >= 0.50 else max(0.0, (avg_surplus_rate / 0.50) * 100)
 
-        time_eff_raw = max(
-            0.0,
-            100.0
-            - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70),
-        )
+        time_eff_raw = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
         time_eff = 60.0 + time_eff_raw * 0.4
 
         return {
-            "rent_year": rent_year,
-            "loan_year": loan_year,
-            "down_strategy": down_strategy,
+            "rent_year": rent_year, "loan_year": loan_year, "down_strategy": down_strategy,
             "occupied_years": round(occupied_years, 2),
             "down_payment_wan": round(actual_down_payment_yuan / 10000, 2),
             "loan_principal_wan": round(actual_loan_principal / 10000, 2),
@@ -455,7 +406,6 @@ class HousingFinanceEngine:
             "surplus_happiness": round(happiness, 2),
             "time_efficiency": round(time_eff, 2),
         }
-
 
 # =====================================================================
 # 📊 熵权与综合得分计算
