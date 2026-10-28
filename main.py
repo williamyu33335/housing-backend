@@ -157,6 +157,7 @@ class SimulationRequest(BaseModel):
     # 金融假设
     housing_fund_pct: float = Field(ge=0, le=24, default=16)
     provident_loan_cap_wan: float = Field(ge=0, default=60.0)
+    annual_inflation_pct: float = Field(ge=0, default=2.5)
 
     rent_monthly_base: float = Field(gt=0, default=1800)
     invest_annual_yield_pct: float = Field(ge=0)
@@ -203,6 +204,7 @@ class HousingFinanceEngine:
         self.invest_year_rate = req.invest_annual_yield_pct / 100.0
         self.month_invest_rate = (1 + self.invest_year_rate) ** (1 / 12) - 1
         self.rent_inflation = req.rent_inflation_year_pct / 100.0
+        self.consumption_inflation = req.annual_inflation_pct / 100.0
 
         self.loan_year_rate = req.loan_annual_rate_pct / 100.0
         self.prov_loan_rate = req.provident_loan_rate_pct / 100.0
@@ -229,6 +231,8 @@ class HousingFinanceEngine:
         else:
             base_15 = self.base_income * ((1 + self.income_growth_rate) ** 5) * ((1 + self.income_growth_rate / 2) ** 10)
             return base_15 * (1.005 ** (year_idx - 15)) # 15年后象征性涨 0.5%
+    def get_current_expense(self, year_idx: int) -> float:
+        return self.month_base_exp * ((1 + self.consumption_inflation) ** year_idx)
 
     def build_combo_loan_schedule(self, loan_year: int, total_loan_principal_yuan: float) -> List[float]:
         if total_loan_principal_yuan <= EPS_YUAN:
@@ -302,7 +306,7 @@ class HousingFinanceEngine:
             current_rent = self.base_rent * ((1 + self.rent_inflation) ** year_idx)
 
             car_cost = get_car_cost(t)
-            real_monthly_outflow = self.month_base_exp + current_rent + car_cost
+            real_monthly_outflow = self.get_current_expense(year_idx) + current_rent + car_cost
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
@@ -345,7 +349,7 @@ class HousingFinanceEngine:
             actual_out_of_pocket = loan_schedule[m] - fund_deduct
             car_cost = get_car_cost(current_idx)
             
-            real_monthly_outflow = self.month_base_exp + self.month_property + actual_out_of_pocket + car_cost
+            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + actual_out_of_pocket + car_cost
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
             if real_monthly_outflow > (current_income * 0.70): return None
@@ -368,7 +372,7 @@ class HousingFinanceEngine:
             current_income = self.get_current_income(year_idx) # 🌟 调用新算法
             car_cost = get_car_cost(current_idx)
             
-            real_monthly_outflow = self.month_base_exp + self.month_property + car_cost
+            real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + car_cost 
             ratio = real_monthly_outflow / current_income
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
