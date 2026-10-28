@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+﻿from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -68,6 +68,75 @@ TIME_COMMUTE_WEIGHT = 0.55
 FAMILY_LABELS = {1: "单身贵族", 2: "二人世界", 3: "三口之家"}
 
 # =====================================================================
+# 📈 职业薪资曲线（V6.3）
+# ---------------------------------------------------------------------
+# 队长指出：原“前5年复利、6-15年减半、15年后0.5%”仍然是指数骨架，
+# 3% 复利 30 年 = 2.43 倍，对普通企业员工明显偏高。
+#
+# 现实是一条会撞天花板的 S 曲线：前几年爬坡、中期晋升、后期平台。
+# 锚点来自国家统计局《2024年城镇单位就业人员年平均工资情况》：
+#   · 城镇非私营单位 124,110 元/年（名义 +2.8%）
+#   · 教育行业 126,185 元/年（+1.7%）
+#   · 信息传输/软件 238,966 元/年（+3.1%）
+# 以及一个常识：起薪越低，相对成长空间越大（4000→8000 的翻倍，
+# 远比 20000→40000 常见）。
+# =====================================================================
+CAREER_TYPES = {
+    "public": {
+        "label": "体制内 / 事业单位",
+        "cap_bonus": -0.05,
+        "mid_bonus": 2.0,
+        "note": "职称台阶：前期慢、后期稳，天花板不高但很少掉下来",
+    },
+    "corporate": {
+        "label": "企业职员",
+        "cap_bonus": 0.00,
+        "mid_bonus": 0.0,
+        "note": "早快后平：35 岁前后到平台，天花板由行业决定",
+    },
+    "freelance": {
+        "label": "自由职业 / 销售",
+        "cap_bonus": 0.25,
+        "mid_bonus": -2.0,
+        "note": "上限更高，但收入波动大，需要更厚的现金缓冲",
+    },
+}
+
+# 行业细分：用国家统计局 2024 年分行业年平均工资相对全国均值（124,110 元）校准
+INDUSTRY_PROFILES = {
+    "it":            {"label": "信息技术 / 互联网", "wage_ratio": 1.93, "cap_factor": 1.15},
+    "finance":       {"label": "金融",             "wage_ratio": 1.63, "cap_factor": 1.10},
+    "research":      {"label": "科研 / 技术服务",   "wage_ratio": 1.41, "cap_factor": 1.08},
+    "health":        {"label": "医疗 / 卫生",       "wage_ratio": 1.15, "cap_factor": 1.03},
+    "education":     {"label": "教育",             "wage_ratio": 1.02, "cap_factor": 1.00},
+    "public_admin":  {"label": "公共管理",          "wage_ratio": 0.93, "cap_factor": 0.98},
+    "manufacturing": {"label": "制造 / 建筑",       "wage_ratio": 0.87, "cap_factor": 0.95},
+    "services":      {"label": "住餐 / 居民服务",   "wage_ratio": 0.49, "cap_factor": 0.85},
+    "other":         {"label": "其他 / 综合",       "wage_ratio": 1.00, "cap_factor": 1.00},
+}
+
+# 职业类型的收入波动率（用于计算应急现金缓冲月数）
+CAREER_VOLATILITY = {"public": 0.05, "corporate": 0.10, "freelance": 0.30}
+
+CAREER_CAP_BASE = 2.10        # 起薪 4000 时的上限倍数
+CAREER_CAP_SLOPE = 0.55       # 起薪每翻一倍，上限倍数下降的斜率
+CAREER_MIN_MULTIPLE = 1.35
+CAREER_MAX_MULTIPLE = 2.40
+CAREER_TIER_BONUS = {1: 0.12, 2: 0.06, 3: 0.00, 4: -0.05, 5: -0.10}
+CAREER_S_SCALE = 4.5          # S 曲线陡峭度
+
+
+def career_cap_multiple(start_income: float, city_tier: int = 3, career_type: str = "corporate", industry: str = "other") -> float:
+    """起薪 → 职业天花板倍数：起薪越低，相对成长空间越大；职业类型微调。"""
+    start = max(1000.0, float(start_income))
+    m = CAREER_CAP_BASE - CAREER_CAP_SLOPE * math.log(start / 4000.0)
+    m += CAREER_TIER_BONUS.get(int(city_tier), 0.0)
+    m += CAREER_TYPES.get(career_type, CAREER_TYPES["corporate"])["cap_bonus"]
+    m *= INDUSTRY_PROFILES.get(industry, INDUSTRY_PROFILES["other"])["cap_factor"]
+    return max(CAREER_MIN_MULTIPLE, min(CAREER_MAX_MULTIPLE, m))
+
+
+# =====================================================================
 # 🧭 风险姿态（V6.1）
 # ---------------------------------------------------------------------
 # 队长定调：70% 红线是默认承诺，不能被“优化”掉；
@@ -122,6 +191,8 @@ MODEL_ASSUMPTIONS = [
     "稳健模式：70%红线只用于还贷期；租房期不设硬顶，租房压力通过抗风险得分体现",
     "激进模式（悬崖方案）：租贷两期都放宽到90%生存线，追求最快时间效率，代价是几乎没有安全垫",
     "隐形支出不设默认值：红包、旅行、医疗、意外、人情往来由用户自行估算（建议覆盖年度人情与意外），填 0 表示暂不计入",
+    "薪资为 S 型曲线而非指数复利：起薪决定职业天花板（4000 起薪约 2.2 倍、10000 起薪约 1.6 倍），增长输入是实际增速，名义工资再叠加通胀",
+    "薪资曲线锚点参考国家统计局 2024 年数据：城镇非私营单位年均 124,110 元、教育业 126,185 元、信息业 238,966 元，名义增速 2.8%、1.7%、3.1%",
     "30年期末流动资产额外给出“按今日物价折算的真实购买力”，戳破名义资产的纸面幻觉",
     "房价按当前名义价格静止处理，不做增值假设：我们只推演现金流与真实居住体感，不制造“房价永远涨”的纸面财富",
 ]
@@ -244,6 +315,11 @@ class SimulationRequest(BaseModel):
     hidden_expense_month: float = Field(
         ge=0, default=DEFAULT_HIDDEN_EXPENSE_MONTH
     )  # 红包/旅行/医疗/意外 的月度摊销
+    # 📈 职业类型与行业：决定薪资曲线的形状与天花板
+    career_type: str = Field(pattern="^(public|corporate|freelance)$", default="corporate")
+    industry: str = Field(default="other")
+    income_volatility_pct: float = Field(ge=0, le=100, default=0)  # 0=按职业类型自动
+    house_price_growth_pct: float = Field(ge=0, le=20, default=0)  # 0=不预测涨跌
 
     # 🏙️ V2.0 空间异质性参数（前端由城市库与几何通勤计算注入）
     city_name: str = Field(default="南宁")
@@ -291,7 +367,26 @@ class HousingFinanceEngine:
         self.min_down_payment_yuan = self.house_total_yuan * self.min_down_ratio
 
         self.base_income = req.monthly_income_net
-        self.income_growth_rate = req.annual_income_growth_pct / 100.0  # 动态收入
+        self.income_growth_rate = req.annual_income_growth_pct / 100.0  # 实际增速（已扣通胀）
+
+        # 📈 职业天花板：起薪越低，相对成长空间越大；职业类型与行业微调
+        self.career_type = req.career_type if req.career_type in CAREER_TYPES else "corporate"
+        self.career_conf = CAREER_TYPES[self.career_type]
+        self.industry = req.industry if req.industry in INDUSTRY_PROFILES else "other"
+        self.industry_conf = INDUSTRY_PROFILES[self.industry]
+        self.career_multiple = career_cap_multiple(
+            self.base_income, req.city_tier, self.career_type, self.industry
+        )
+        self.career_ceiling = self.base_income * self.career_multiple
+
+        # 💨 收入波动 → 应急现金缓冲要求（3~7 个月）
+        self.volatility = (
+            req.income_volatility_pct / 100.0
+            if req.income_volatility_pct > 0
+            else CAREER_VOLATILITY.get(self.career_type, 0.10)
+        )
+        self.buffer_months_required = round(3.0 + 12.0 * self.volatility, 1)
+        self.house_growth = req.house_price_growth_pct / 100.0
 
         # =============================================================
         # 🧭 V6.1 风险姿态：红线不是参数，是承诺
@@ -453,22 +548,87 @@ class HousingFinanceEngine:
     def set_base_rent(self, new_rent: float):
         self.base_rent = new_rent
 
-    # 🌟 新增：核心薪资增长算法（分段式）
+    # 📈 职业 S 曲线：起薪决定天花板，增长输入决定爬坡速度
+    def career_mid_year(self) -> float:
+        """增长越快，越早到达晋升平台（但天花板不变）。"""
+        return max(4.0, min(16.0, 14.0 - self.income_growth_rate * 100.0 * 1.5 + self.career_conf["mid_bonus"]))
+
+    def _career_progress(self, year_idx: int) -> float:
+        """0~1 的 S 曲线进度：前段慢、中段快、后段趋平。"""
+        if self.income_growth_rate <= 0 or self.career_ceiling <= self.base_income + 1:
+            return 0.0
+        mid = self.career_mid_year()
+        s = CAREER_S_SCALE
+
+        def f(t):
+            return 1.0 / (1.0 + math.exp(-(t - mid) / s))
+
+        f0, f30 = f(0), f(30)
+        if f30 - f0 < EPS_FLOAT:
+            return 1.0
+        shape = max(0.0, min(1.0, (f(year_idx) - f0) / (f30 - f0)))
+        # 增速决定 30 年后能吃到多少天花板：3% 吃满，1% 只吃三分之一
+        end_fraction = min(1.0, self.income_growth_rate / 0.03)
+        return shape * end_fraction
+
+    def salary_curve(self, year_idx: int) -> float:
+        """
+        模型口径的“名义工资”：S 曲线，撞天花板后不再上涨。
+        刻意不做通胀指数化——30 年后名义 1.6 万，按今日购买力可能只剩七八千。
+        这不是悲观，是拒绝用“工资永远跑赢通胀”的假设去画大饼。
+        """
+        return self.base_income + (
+            self.career_ceiling - self.base_income
+        ) * self._career_progress(year_idx)
+
     def get_current_income(self, year_idx: int) -> float:
-        """
-        重构薪资增长：
-        0-5年：按设定的增长率 (如 5%)
-        6-15年：增长率减半 (如 2.5%)
-        15年以后：几乎停滞 (0.5%)
-        """
-        if year_idx <= 5:
-            return self.base_income * ((1 + self.income_growth_rate) ** year_idx)
-        elif year_idx <= 15:
-            base_5 = self.base_income * ((1 + self.income_growth_rate) ** 5)
-            return base_5 * ((1 + self.income_growth_rate / 2) ** (year_idx - 5))
-        else:
-            base_15 = self.base_income * ((1 + self.income_growth_rate) ** 5) * ((1 + self.income_growth_rate / 2) ** 10)
-            return base_15 * (1.005 ** (year_idx - 15)) # 15年后象征性涨 0.5%
+        """现金流使用的名义工资。"""
+        return self.salary_curve(year_idx)
+
+    def career_summary(self) -> Dict:
+        years = (0, 5, 10, 15, 20, 25, 30)
+        infl = (1 + self.consumption_inflation) ** SIM_TOTAL_YEARS
+        nominal_30 = self.salary_curve(SIM_TOTAL_YEARS)
+        return {
+            "start_monthly": round(self.base_income, 0),
+            "career_type": self.career_type,
+            "career_label": self.career_conf["label"],
+            "career_note": self.career_conf["note"],
+            "industry": self.industry,
+            "industry_label": self.industry_conf["label"],
+            "volatility_pct": round(self.volatility * 100, 1),
+            "buffer_months_required": self.buffer_months_required,
+            "cap_multiple": round(self.career_multiple, 2),
+            "ceiling_monthly": round(self.career_ceiling, 0),
+            "mid_year": round(self.career_mid_year(), 1),
+            "growth_pct_input": round(self.income_growth_rate * 100, 2),
+            "nominal_curve": {str(y): round(self.salary_curve(y), 0) for y in years},
+            "real_curve": {
+                str(y): round(self.salary_curve(y) / ((1 + self.consumption_inflation) ** y), 0)
+                for y in years
+            },
+            "nominal_30y_monthly": round(nominal_30, 0),
+            "real_30y_monthly": round(nominal_30 / infl, 0),
+            "real_30y_ratio": round(nominal_30 / infl / self.base_income, 3),
+            "inflation_factor_30y": round(infl, 3),
+            "note": (
+                f"起薪 {self.base_income:,.0f} 元 → 天花板约 {self.career_ceiling:,.0f} 元"
+                f"（{self.career_multiple:.2f} 倍，名义口径）；30 年后按今日物价约 "
+                f"{nominal_30 / infl:,.0f} 元"
+                if self.income_growth_rate > 0
+                else f"你设定了 0% 增长：名义工资停在 {self.base_income:,.0f} 元，"
+                f"30 年后按今日物价只剩 {self.base_income / infl:,.0f} 元"
+            ),
+        }
+
+    def market_summary(self) -> Dict:
+        return {
+            "house_price_growth_pct": round(self.house_growth * 100, 2),
+            "rent_growth_pct": round(self.rent_inflation * 100, 2),
+            "inflation_pct": round(self.consumption_inflation * 100, 2),
+            "note": "房价增速为 0 表示不做涨跌预测；租金与物价按输入复利",
+        }
+
     def get_current_expense(self, year_idx: int) -> float:
         # 生活开销 + 隐形支出（红包/旅行/医疗/意外），一起随通胀膨胀
         base = self.month_base_exp + self.hidden_expense_month
@@ -534,6 +694,7 @@ class HousingFinanceEngine:
         total_months_surplus_rate = 0.0
         max_outflow_ratio = 0.0
         min_cash = self.init_saving
+        min_buffer_months = float('inf')
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
@@ -567,21 +728,26 @@ class HousingFinanceEngine:
             if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
             if remain_cash < min_cash: min_cash = remain_cash
+            if real_monthly_outflow > 1:
+                min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
 
-        purchase_tax_yuan = self.house_total_yuan * self.purchase_tax_rate
-        total_upfront_needed = self.min_down_payment_yuan + purchase_tax_yuan
+        # 🏠 购房时点的房价：可选年增值（默认 0 = 不预测涨跌）
+        purchase_price_yuan = self.house_total_yuan * ((1 + self.house_growth) ** rent_year)
+        min_down_yuan = purchase_price_yuan * self.min_down_ratio
+        purchase_tax_yuan = purchase_price_yuan * self.purchase_tax_rate
+        total_upfront_needed = min_down_yuan + purchase_tax_yuan
         if remain_cash < total_upfront_needed - EPS_YUAN: return None
 
         actual_down_payment_yuan = 0.0
         if down_strategy == "min":
-            actual_down_payment_yuan = self.min_down_payment_yuan
+            actual_down_payment_yuan = min_down_yuan
         elif down_strategy == "max":
-            actual_down_payment_yuan = min(remain_cash - purchase_tax_yuan, self.house_total_yuan)
+            actual_down_payment_yuan = min(remain_cash - purchase_tax_yuan, purchase_price_yuan)
         elif down_strategy == "balanced":
             extra = (remain_cash - total_upfront_needed) * 0.5
-            actual_down_payment_yuan = min(self.min_down_payment_yuan + extra, self.house_total_yuan)
+            actual_down_payment_yuan = min(min_down_yuan + extra, purchase_price_yuan)
 
-        actual_loan_principal = self.house_total_yuan - actual_down_payment_yuan
+        actual_loan_principal = purchase_price_yuan - actual_down_payment_yuan
         remain_cash -= actual_down_payment_yuan + purchase_tax_yuan
         remain_cash = max(0.0, remain_cash)
 
@@ -612,6 +778,8 @@ class HousingFinanceEngine:
             if remain_cash < -EPS_YUAN: return None
             remain_cash = max(0.0, remain_cash)
             if remain_cash < min_cash: min_cash = remain_cash
+            if real_monthly_outflow > 1:
+                min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
 
         # 阶段3：自由期
         rest_month = SIM_TOTAL_YEARS * 12 - rent_month - loan_month
@@ -634,9 +802,17 @@ class HousingFinanceEngine:
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             remain_cash = max(0.0, remain_cash)
             if remain_cash < min_cash: min_cash = remain_cash
+            if real_monthly_outflow > 1:
+                min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
 
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
+
+        # 💨 现金缓冲：最低现金能覆盖几个月支出？覆盖不足按比例扣分
+        if min_buffer_months == float("inf"):
+            min_buffer_months = self.buffer_months_required
+        buffer_score = min(1.0, min_buffer_months / max(self.buffer_months_required, 0.1))
+        adapt_score = adapt_score * (0.55 + 0.45 * buffer_score)
 
         implied_rent_house = (self.base_rent * 12 / RENT_SALE_RATIO) / 10000
         target_house = self.req.house_total_wan
@@ -692,6 +868,9 @@ class HousingFinanceEngine:
                 remain_cash / ((1 + self.consumption_inflation) ** SIM_TOTAL_YEARS) / 10000, 2
             ),
             "min_cash_wan": round(min_cash / 10000, 2),
+            "buffer_months": round(min_buffer_months, 2),
+            "buffer_required": self.buffer_months_required,
+            "purchase_price_wan": round(purchase_price_yuan / 10000, 2),
             "max_deficit_wan": round(max_deficit / 10000, 2),
             "comfort_spatial": round(comfort_spatial_life, 2),
             "rent_comfort_spatial": round(rent_comfort_spatial, 2),
@@ -907,6 +1086,8 @@ def simulate_relative(req: SimulationRequest):
         "assumptions": MODEL_ASSUMPTIONS,
         "spatial": spatial_payload,
         "risk": engine.risk_summary(),
+        "career": engine.career_summary(),
+        "market": engine.market_summary(),
         "entropy_result": ew,
         "all_scheme": out_list,
         "top_comprehensive": out_list[:TOP_N],
@@ -992,6 +1173,8 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         "assumptions": MODEL_ASSUMPTIONS,
         "spatial": spatial_payload,
         "risk": engine.risk_summary(),
+        "career": engine.career_summary(),
+        "market": engine.market_summary(),
         "entropy_result": ew,
         "global_best": out_list[0],
         "rent_level_board": rent_board,
@@ -1021,4 +1204,13 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+
+
+
+
+
+
+
 
