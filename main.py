@@ -178,14 +178,14 @@ MODEL_ASSUMPTIONS = [
     "租房阶段：公积金按月提取，计入当月可支配现金流；购房还贷阶段，公积金按月对冲抵扣月供",
     "租金按年度复利调价，同一年内12个月租金固定不变",
     "严苛财务红线：无论何种方案，购房还贷期（真实月供+生活开销+物业费）超过月收入 70% 的组合将被直接一票否决剔除",
-    "小康家庭定义：全生命周期平均月度纯现金结余必须达到或超过总收入的 50%，抗拒沦为被账单绑架的打工机器",
+    "小康家庭定义：全周期平均月度纯现金结余必须达到或超过总收入的 50%，抗拒沦为被账单绑架的打工机器",
     "反资本剥削：贷款年限越短、首付比例越高，时间效率得分越高，鼓励尽早赎清贷款",
-    "抗风险稳健度算法升级：基于生命周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算",
+    "抗风险稳健度算法升级：基于周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算",
     "首付策略升级：输入的首付比例仅作为最低门槛，系统会智能遍历最低首付、折中首付、极限高首付（掏空现金）策略",
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
     "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期",
     "空间异质性折算：房价按片区真实单价（元/㎡）折算可购面积，居住舒适度50%以上由“人均居住面积×城市资源溢价”决定，拒绝用总价幻想豪宅",
-    "通勤折现：租房期与还贷期分别使用各自的单程通勤分钟，按生命周期加权得到时间效率；单程15分钟为满分，60分钟后进入加速惩罚区",
+    "通勤折现：租房期与还贷期分别使用各自的单程通勤分钟，按周期加权得到时间效率；单程15分钟为满分，60分钟后进入加速惩罚区",
     "通勤交通费按月计入现金流：租房期与买房期分别扣减，默认按 120元 + 4元/分钟 估算，可显式覆盖",
     "相对收入位置：结余幸福感乘以本地收入分位系数（你的收入/城市平均薪资），同样的结余在不同城市体感完全不同",
     "稳健模式：70%红线只用于还贷期；租房期不设硬顶，租房压力通过抗风险得分体现",
@@ -319,6 +319,7 @@ class SimulationRequest(BaseModel):
     career_type: str = Field(pattern="^(public|corporate|freelance)$", default="corporate")
     industry: str = Field(default="other")
     income_volatility_pct: float = Field(ge=0, le=100, default=0)  # 0=按职业类型自动
+    income_earners: int = Field(ge=1, le=4, default=1)  # 家庭就业人数（双人模式=2）
     house_price_growth_pct: float = Field(ge=0, le=20, default=0)  # 0=不预测涨跌
 
     # 🏙️ V2.0 空间异质性参数（前端由城市库与几何通勤计算注入）
@@ -369,15 +370,19 @@ class HousingFinanceEngine:
         self.base_income = req.monthly_income_net
         self.income_growth_rate = req.annual_income_growth_pct / 100.0  # 实际增速（已扣通胀）
 
+        # 👫 收入口径：家庭合计收入 / 就业人数 = 单人起薪
+        self.income_earners = max(1, int(req.income_earners))
+        self.per_earner_income = self.base_income / self.income_earners
+
         # 📈 职业天花板：起薪越低，相对成长空间越大；职业类型与行业微调
         self.career_type = req.career_type if req.career_type in CAREER_TYPES else "corporate"
         self.career_conf = CAREER_TYPES[self.career_type]
         self.industry = req.industry if req.industry in INDUSTRY_PROFILES else "other"
         self.industry_conf = INDUSTRY_PROFILES[self.industry]
         self.career_multiple = career_cap_multiple(
-            self.base_income, req.city_tier, self.career_type, self.industry
+            self.per_earner_income, req.city_tier, self.career_type, self.industry
         )
-        self.career_ceiling = self.base_income * self.career_multiple
+        self.career_ceiling = self.per_earner_income * self.career_multiple * self.income_earners
 
         # 💨 收入波动 → 应急现金缓冲要求（3~7 个月）
         self.volatility = (
@@ -447,7 +452,7 @@ class HousingFinanceEngine:
         # 当地“体面两居”的月租基准（70㎡），用于衡量租房阶段的相对体感
         self.local_2bed_rent = max(self.city_avg_rent_sqm * 70.0, EPS_YUAN)
 
-        # 通勤：租房期与买房期分别计算，时间成本按生命周期加权
+        # 通勤：租房期与买房期分别计算，时间成本按周期加权
         self.rent_commute_min = req.rent_commute_min
         self.own_commute_min = req.own_commute_min
         self.rent_commute_score = self.commute_score(req.rent_commute_min)
@@ -464,7 +469,7 @@ class HousingFinanceEngine:
         )
 
         # 相对收入位置：你在本地到底是“人上人”还是“被平均”
-        self.rel_income = self.base_income / max(self.city_avg_salary, EPS_YUAN)
+        self.rel_income = self.base_income / max(self.city_avg_salary * self.income_earners, EPS_YUAN)
         self.cost_index = CITY_COST_INDEX.get(self.city_tier, 1.0)
         self.resource_index = CITY_RESOURCE_INDEX.get(self.city_tier, 0.85)
 
@@ -591,6 +596,8 @@ class HousingFinanceEngine:
         nominal_30 = self.salary_curve(SIM_TOTAL_YEARS)
         return {
             "start_monthly": round(self.base_income, 0),
+            "income_earners": self.income_earners,
+            "per_earner_start": round(self.per_earner_income, 0),
             "career_type": self.career_type,
             "career_label": self.career_conf["label"],
             "career_note": self.career_conf["note"],
@@ -843,7 +850,7 @@ class HousingFinanceEngine:
         rel_mult = min(1.15, max(0.85, 0.85 + 0.15 * self.rel_income))
         happiness = min(100.0, happiness_base * rel_mult)
 
-        # ⏱️ 时间效率：原有“租贷年限”得分 + 生命周期通勤得分（租房期/买房期分别计分）
+        # ⏱️ 时间效率：原有“租贷年限”得分 + 周期通勤得分（租房期/买房期分别计分）
         time_eff_raw = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
         time_base = 60.0 + time_eff_raw * 0.4
         commute_life = (
@@ -1204,6 +1211,9 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+
 
 
 
