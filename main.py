@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -1257,6 +1257,45 @@ def api_districts(city_code: str):
     if city_code == "450100":
         return {"code": 200, "data": NANNING_REGIONS, "fallback": True}
     return {"code": 200, "data": [], "fallback": True}
+
+
+@app.get("/api/listings")
+def api_listings(
+    city_code: Optional[str] = None,
+    max_price_wan: Optional[float] = None,
+    min_area: Optional[float] = None,
+    bedrooms: Optional[int] = None,
+    district_id: Optional[int] = None,
+    limit: int = 50,
+):
+    """V7.1：房源列表。没库、没数据、或查询失败都返回空数组 + 原因，绝不编造。"""
+    if not (data_layer and data_layer.enabled()):
+        return {"code": 200, "data": [], "fallback": True, "reason": "数据库未启用"}
+    try:
+        rows = data_layer.list_listings(
+            city_code=city_code,
+            max_price=(max_price_wan * 10000 if max_price_wan is not None else None),
+            min_area=min_area,
+            bedrooms=bedrooms,
+            district_id=district_id,
+            limit=limit,
+        )
+        return {"code": 200, "data": rows, "count": len(rows)}
+    except Exception as e:  # noqa: BLE001
+        logging.warning("读取 listings 失败：%s", e)
+        return {"code": 200, "data": [], "fallback": True, "reason": str(e)}
+
+
+@app.get("/api/listings/stats")
+def api_listing_stats(city_code: Optional[str] = None):
+    """V7.1：按城市汇总房源数与价格区间。空表就是空数组，用来诚实显示"暂无数据"。"""
+    if not (data_layer and data_layer.enabled()):
+        return {"code": 200, "data": [], "fallback": True, "reason": "数据库未启用"}
+    try:
+        return {"code": 200, "data": data_layer.listing_stats(city_code=city_code)}
+    except Exception as e:  # noqa: BLE001
+        logging.warning("统计 listings 失败：%s", e)
+        return {"code": 200, "data": [], "fallback": True, "reason": str(e)}
 
 
 @app.get("/api/health/db")

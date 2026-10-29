@@ -1,0 +1,62 @@
+{
+  "as_of": "2025-11",
+  "notes": "外部基准只用于校准与审计，不参与线上推演；所有数字均可在 sources 中回溯。",
+  "sources": [
+    {
+      "id": "cih-100city-2025-10",
+      "publisher": "中指研究院 / 证券时报",
+      "title": "中国房地产指数系统百城价格指数报告（2025年10月）",
+      "url": "https://www.stcn.com/article/detail/3474168.html",
+      "fetched_at": "2026-10-28",
+      "metrics": {
+        "new_home_avg_price_sqm": 16973,
+        "resale_avg_price_sqm": 13268,
+        "resale_mom_pct": -0.84
+      }
+    },
+    {
+      "id": "cih-rent-2025q1",
+      "publisher": "中指研究院 / 新京报",
+      "title": "2025年一季度全国住房租赁市场报告",
+      "url": "https://m.bjnews.com.cn/detail/1745412038168070.html",
+      "fetched_at": "2026-10-28",
+      "metrics": {
+        "rent_50city_avg": 35.3,
+        "rent_yoy_pct": -3.4,
+        "rent_income_ratio_gt30_cities": 4,
+        "rent_income_ratio_lt20_share": 0.8
+      }
+    }
+  ],
+  "rent_bands": {
+    "explicit": {
+      "北京": [80, 110],
+      "上海": [80, 110],
+      "深圳": [80, 110],
+      "杭州": [40, 60],
+      "广州": [40, 60],
+      "三亚": [40, 60],
+      "厦门": [40, 60],
+      "南京": [20, 40],
+      "珠海": [20, 40]
+    },
+    "by_tier": {
+      "1": [80, 110],
+      "2": [20, 60],
+      "3": [14, 40],
+      "4": [10, 32],
+      "5": [8, 25]
+    }
+  },
+  "rent_income_ratio": {
+    "reference_area_sqm": 70,
+    "max_share_if_not_listed": 0.30,
+    "listed_high_cities": ["深圳", "北京", "三亚", "上海"],
+    "share_below_20pct_target": 0.80,
+    "earners_for_household": 1.6,
+    "_note": "外部报告的“租金收入比”口径未公开，推测为家庭收入；我们同时给出单人（保守）与 1.6 人就业（家庭）两种口径，避免用一个数字假装精确。"
+  },
+  "price_to_rent": {
+    "plausible_annual_yield_pct": [1.2, 6.0]
+  }
+}

@@ -21,8 +21,24 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent if HERE.name in ("数据", "data") else HERE
 
 
+# 数据文件可能和脚本不同目录（db/db、数据/、仓库根），逐个找，避免"新机器一跑就 FileNotFoundError"
+SEARCH_DIRS = [
+    HERE,                              # 同目录
+    HERE.parent,                       # 上一级
+    HERE.parent.parent,                # 项目根
+    HERE.parent.parent / "数据",
+    HERE.parent.parent / "data",
+]
+
+
 def load_json(name: str):
-    return json.loads((HERE / name).read_text(encoding="utf-8"))
+    for base in SEARCH_DIRS:
+        p = Path(base) / name
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    raise SystemExit(
+        f"找不到 {name}，已找过：\n  " + "\n  ".join(str(b) for b in SEARCH_DIRS)
+    )
 
 
 def main() -> int:
