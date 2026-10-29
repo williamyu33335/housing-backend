@@ -9,6 +9,11 @@ import logging
 import time
 from typing import List, Dict, Optional
 
+try:
+    import db as data_layer
+except Exception:  # noqa: BLE001
+    data_layer = None
+
 # 日志配置
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -323,6 +328,7 @@ class SimulationRequest(BaseModel):
     house_price_growth_pct: float = Field(ge=0, le=20, default=0)  # 0=不预测涨跌
 
     # 🏙️ V2.0 空间异质性参数（前端由城市库与几何通勤计算注入）
+    city_code: str = Field(default="450100")
     city_name: str = Field(default="南宁")
     city_tier: int = Field(ge=1, le=5, default=3)
     city_avg_price_sqm: float = Field(gt=0, default=10500)
@@ -999,10 +1005,20 @@ def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
     }
 
 
+def _log_run(req, summary: Dict) -> None:
+    """推演留痕：失败不影响主流程。"""
+    if not (data_layer and data_layer.enabled()):
+        return
+    try:
+        data_layer.save_run(getattr(req, "city_code", None), req.model_dump(), summary)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("推演留痕失败：%s", e)
+
+
 # =====================================================================
 # 🚀 FastAPI 接口
 # =====================================================================
-app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V6.0 · 空间异质性引擎")
+app = FastAPI(title="房产金融WebGIS租购决策仿真系统 V7.0 · PostgreSQL/PostGIS")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -1085,6 +1101,15 @@ def simulate_relative(req: SimulationRequest):
 
     cost = time.time() - start_time
     logging.info(f"相对仿真完成，可行方案：{len(result_list)}组，耗时：{cost:.2f}s")
+
+    if out_list:
+        _log_run(req, {
+            "mode": "relative",
+            "feasible": len(out_list),
+            "top": {k: out_list[0].get(k) for k in (
+                "rent_year", "loan_year", "down_strategy",
+                "liquid_asset_end_wan", "real_asset_wan", "comprehensive_score")},
+        })
 
     return {
         "code": 200,
@@ -1173,6 +1198,15 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         f"绝对寻优完成，档位：{len(RENT_LEVELS_FOR_ABSOLUTE)}，可行方案：{len(all_candidates)}，耗时：{cost:.2f}s"
     )
 
+    if out_list:
+        _log_run(req, {
+            "mode": "absolute",
+            "feasible": len(out_list),
+            "top": {k: out_list[0].get(k) for k in (
+                "rent_year", "loan_year", "down_strategy", "rent_level",
+                "liquid_asset_end_wan", "real_asset_wan", "comprehensive_score")},
+        })
+
     return {
         "code": 200,
         "mode": "absolute",
@@ -1202,15 +1236,63 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
     }
 
 
+@app.get("/api/cities")
+def api_cities():
+    """V7.0：城市列表。数据库不可用时返回空，前端自动回退到内置 CITY_DB。"""
+    if data_layer and data_layer.enabled():
+        try:
+            return {"code": 200, "data": data_layer.list_cities()}
+        except Exception as e:  # noqa: BLE001
+            logging.warning("读取 cities 失败：%s", e)
+    return {"code": 200, "data": [], "fallback": True}
+
+
+@app.get("/api/cities/{city_code}/districts")
+def api_districts(city_code: str):
+    if data_layer and data_layer.enabled():
+        try:
+            return {"code": 200, "data": data_layer.list_districts(city_code)}
+        except Exception as e:  # noqa: BLE001
+            logging.warning("读取 districts 失败：%s", e)
+    if city_code == "450100":
+        return {"code": 200, "data": NANNING_REGIONS, "fallback": True}
+    return {"code": 200, "data": [], "fallback": True}
+
+
+@app.get("/api/health/db")
+def api_db_health():
+    if not data_layer:
+        return {"enabled": False, "reason": "db module not importable"}
+    return data_layer.health()
+
+
 @app.get("/api/gis/regions")
 def get_regions():
-    return {"code": 200, "data": NANNING_REGIONS}
+    if data_layer and data_layer.enabled():
+        try:
+            rows = data_layer.list_districts("450100")
+            if rows:
+                data = [{
+                    "name": r["name"], "lat": r["lat"], "lng": r["lng"],
+                    "price_sqm": r["price_sqm"], "rent_ref": r["rent_ref"],
+                    "commute_min": r["commute_min"],
+                    "house_ref": round(r["price_sqm"] * 90 / 10000),
+                    "desc": "数据库片区",
+                } for r in rows]
+                return {"code": 200, "data": data, "source": "db"}
+        except Exception as e:  # noqa: BLE001
+            logging.warning("读取南宁片区失败：%s", e)
+    return {"code": 200, "data": NANNING_REGIONS, "source": "fallback"}
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+
+
 
 
 
