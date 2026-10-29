@@ -1,0 +1,1706 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-28T15:22:35+00:00",
+  "note": "V7.0 入库前的数据契约：cities → cities 表，zones → districts 表",
+  "sources": [
+    "国家统计局《2024年城镇单位就业人员年平均工资情况》",
+    "中指研究院《百城价格指数报告（2025年10月）》",
+    "中指研究院《2025年一季度全国住房租赁市场报告》"
+  ],
+  "cities": [
+    {
+      "code": "110000",
+      "name": "北京",
+      "tier": 1,
+      "tier_label": "超一线",
+      "lat": 39.9,
+      "lng": 116.41,
+      "price_sqm": 63000.0,
+      "rent_sqm": 92.0,
+      "avg_salary": 13900.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "北京·核心区",
+          "price_sqm": 81900,
+          "rent_ref": 8000,
+          "commute_min": 11,
+          "lat": 39.9263,
+          "lng": 116.429
+        },
+        {
+          "key": "main",
+          "name": "北京·主城区",
+          "price_sqm": 63000,
+          "rent_ref": 6400,
+          "commute_min": 31,
+          "lat": 39.973,
+          "lng": 116.4628
+        },
+        {
+          "key": "suburb",
+          "name": "北京·近郊新区",
+          "price_sqm": 44100,
+          "rent_ref": 4600,
+          "commute_min": 63,
+          "lat": 40.0459,
+          "lng": 116.5157
+        }
+      ]
+    },
+    {
+      "code": "310000",
+      "name": "上海",
+      "tier": 1,
+      "tier_label": "超一线",
+      "lat": 31.23,
+      "lng": 121.47,
+      "price_sqm": 61000.0,
+      "rent_sqm": 95.0,
+      "avg_salary": 13800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "上海·核心区",
+          "price_sqm": 79300,
+          "rent_ref": 8300,
+          "commute_min": 11,
+          "lat": 31.2563,
+          "lng": 121.4871
+        },
+        {
+          "key": "main",
+          "name": "上海·主城区",
+          "price_sqm": 61000,
+          "rent_ref": 6600,
+          "commute_min": 31,
+          "lat": 31.303,
+          "lng": 121.5174
+        },
+        {
+          "key": "suburb",
+          "name": "上海·近郊新区",
+          "price_sqm": 42700,
+          "rent_ref": 4800,
+          "commute_min": 63,
+          "lat": 31.3759,
+          "lng": 121.5648
+        }
+      ]
+    },
+    {
+      "code": "440300",
+      "name": "深圳",
+      "tier": 1,
+      "tier_label": "超一线",
+      "lat": 22.54,
+      "lng": 114.06,
+      "price_sqm": 58000.0,
+      "rent_sqm": 85.0,
+      "avg_salary": 13000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "深圳·核心区",
+          "price_sqm": 75400,
+          "rent_ref": 7400,
+          "commute_min": 11,
+          "lat": 22.5663,
+          "lng": 114.0758
+        },
+        {
+          "key": "main",
+          "name": "深圳·主城区",
+          "price_sqm": 58000,
+          "rent_ref": 6000,
+          "commute_min": 31,
+          "lat": 22.613,
+          "lng": 114.1039
+        },
+        {
+          "key": "suburb",
+          "name": "深圳·近郊新区",
+          "price_sqm": 40600,
+          "rent_ref": 4300,
+          "commute_min": 63,
+          "lat": 22.6859,
+          "lng": 114.1478
+        }
+      ]
+    },
+    {
+      "code": "440100",
+      "name": "广州",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 23.13,
+      "lng": 113.26,
+      "price_sqm": 33000.0,
+      "rent_sqm": 55.0,
+      "avg_salary": 11500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "广州·核心区",
+          "price_sqm": 42900,
+          "rent_ref": 4800,
+          "commute_min": 9,
+          "lat": 23.1504,
+          "lng": 113.2723
+        },
+        {
+          "key": "main",
+          "name": "广州·主城区",
+          "price_sqm": 33000,
+          "rent_ref": 3800,
+          "commute_min": 25,
+          "lat": 23.1868,
+          "lng": 113.2943
+        },
+        {
+          "key": "suburb",
+          "name": "广州·近郊新区",
+          "price_sqm": 23100,
+          "rent_ref": 2800,
+          "commute_min": 51,
+          "lat": 23.2435,
+          "lng": 113.3286
+        }
+      ]
+    },
+    {
+      "code": "330100",
+      "name": "杭州",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 30.27,
+      "lng": 120.16,
+      "price_sqm": 31000.0,
+      "rent_sqm": 52.0,
+      "avg_salary": 11000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "杭州·核心区",
+          "price_sqm": 40300,
+          "rent_ref": 4600,
+          "commute_min": 9,
+          "lat": 30.2904,
+          "lng": 120.1731
+        },
+        {
+          "key": "main",
+          "name": "杭州·主城区",
+          "price_sqm": 31000,
+          "rent_ref": 3600,
+          "commute_min": 25,
+          "lat": 30.3268,
+          "lng": 120.1965
+        },
+        {
+          "key": "suburb",
+          "name": "杭州·近郊新区",
+          "price_sqm": 21700,
+          "rent_ref": 2600,
+          "commute_min": 51,
+          "lat": 30.3835,
+          "lng": 120.233
+        }
+      ]
+    },
+    {
+      "code": "320100",
+      "name": "南京",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 32.06,
+      "lng": 118.8,
+      "price_sqm": 28000.0,
+      "rent_sqm": 40.0,
+      "avg_salary": 10500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "南京·核心区",
+          "price_sqm": 36400,
+          "rent_ref": 3500,
+          "commute_min": 9,
+          "lat": 32.0804,
+          "lng": 118.8134
+        },
+        {
+          "key": "main",
+          "name": "南京·主城区",
+          "price_sqm": 28000,
+          "rent_ref": 2800,
+          "commute_min": 25,
+          "lat": 32.1168,
+          "lng": 118.8372
+        },
+        {
+          "key": "suburb",
+          "name": "南京·近郊新区",
+          "price_sqm": 19600,
+          "rent_ref": 2000,
+          "commute_min": 51,
+          "lat": 32.1735,
+          "lng": 118.8744
+        }
+      ]
+    },
+    {
+      "code": "320500",
+      "name": "苏州",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 31.3,
+      "lng": 120.58,
+      "price_sqm": 22000.0,
+      "rent_sqm": 36.0,
+      "avg_salary": 10000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "苏州·核心区",
+          "price_sqm": 28600,
+          "rent_ref": 3200,
+          "commute_min": 9,
+          "lat": 31.3204,
+          "lng": 120.5933
+        },
+        {
+          "key": "main",
+          "name": "苏州·主城区",
+          "price_sqm": 22000,
+          "rent_ref": 2500,
+          "commute_min": 25,
+          "lat": 31.3568,
+          "lng": 120.6169
+        },
+        {
+          "key": "suburb",
+          "name": "苏州·近郊新区",
+          "price_sqm": 15400,
+          "rent_ref": 1800,
+          "commute_min": 51,
+          "lat": 31.4135,
+          "lng": 120.6538
+        }
+      ]
+    },
+    {
+      "code": "330200",
+      "name": "宁波",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 29.87,
+      "lng": 121.55,
+      "price_sqm": 24000.0,
+      "rent_sqm": 38.0,
+      "avg_salary": 9800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "宁波·核心区",
+          "price_sqm": 31200,
+          "rent_ref": 3300,
+          "commute_min": 9,
+          "lat": 29.8904,
+          "lng": 121.5631
+        },
+        {
+          "key": "main",
+          "name": "宁波·主城区",
+          "price_sqm": 24000,
+          "rent_ref": 2700,
+          "commute_min": 25,
+          "lat": 29.9268,
+          "lng": 121.5864
+        },
+        {
+          "key": "suburb",
+          "name": "宁波·近郊新区",
+          "price_sqm": 16800,
+          "rent_ref": 1900,
+          "commute_min": 51,
+          "lat": 29.9835,
+          "lng": 121.6227
+        }
+      ]
+    },
+    {
+      "code": "350200",
+      "name": "厦门",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 24.48,
+      "lng": 118.09,
+      "price_sqm": 35000.0,
+      "rent_sqm": 45.0,
+      "avg_salary": 10000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "厦门·核心区",
+          "price_sqm": 45500,
+          "rent_ref": 3900,
+          "commute_min": 9,
+          "lat": 24.5004,
+          "lng": 118.1025
+        },
+        {
+          "key": "main",
+          "name": "厦门·主城区",
+          "price_sqm": 35000,
+          "rent_ref": 3200,
+          "commute_min": 25,
+          "lat": 24.5368,
+          "lng": 118.1246
+        },
+        {
+          "key": "suburb",
+          "name": "厦门·近郊新区",
+          "price_sqm": 24500,
+          "rent_ref": 2300,
+          "commute_min": 51,
+          "lat": 24.5935,
+          "lng": 118.1593
+        }
+      ]
+    },
+    {
+      "code": "120000",
+      "name": "天津",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 39.13,
+      "lng": 117.2,
+      "price_sqm": 18000.0,
+      "rent_sqm": 32.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "天津·核心区",
+          "price_sqm": 23400,
+          "rent_ref": 2800,
+          "commute_min": 9,
+          "lat": 39.1504,
+          "lng": 117.2146
+        },
+        {
+          "key": "main",
+          "name": "天津·主城区",
+          "price_sqm": 18000,
+          "rent_ref": 2200,
+          "commute_min": 25,
+          "lat": 39.1868,
+          "lng": 117.2406
+        },
+        {
+          "key": "suburb",
+          "name": "天津·近郊新区",
+          "price_sqm": 12600,
+          "rent_ref": 1600,
+          "commute_min": 51,
+          "lat": 39.2435,
+          "lng": 117.2813
+        }
+      ]
+    },
+    {
+      "code": "370200",
+      "name": "青岛",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 36.07,
+      "lng": 120.38,
+      "price_sqm": 20000.0,
+      "rent_sqm": 33.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "青岛·核心区",
+          "price_sqm": 26000,
+          "rent_ref": 2900,
+          "commute_min": 9,
+          "lat": 36.0904,
+          "lng": 120.394
+        },
+        {
+          "key": "main",
+          "name": "青岛·主城区",
+          "price_sqm": 20000,
+          "rent_ref": 2300,
+          "commute_min": 25,
+          "lat": 36.1268,
+          "lng": 120.419
+        },
+        {
+          "key": "suburb",
+          "name": "青岛·近郊新区",
+          "price_sqm": 14000,
+          "rent_ref": 1700,
+          "commute_min": 51,
+          "lat": 36.1835,
+          "lng": 120.458
+        }
+      ]
+    },
+    {
+      "code": "510100",
+      "name": "成都",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 30.57,
+      "lng": 104.07,
+      "price_sqm": 18000.0,
+      "rent_sqm": 35.0,
+      "avg_salary": 9500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "成都·核心区",
+          "price_sqm": 23400,
+          "rent_ref": 3100,
+          "commute_min": 9,
+          "lat": 30.5904,
+          "lng": 104.0832
+        },
+        {
+          "key": "main",
+          "name": "成都·主城区",
+          "price_sqm": 18000,
+          "rent_ref": 2400,
+          "commute_min": 25,
+          "lat": 30.6268,
+          "lng": 104.1066
+        },
+        {
+          "key": "suburb",
+          "name": "成都·近郊新区",
+          "price_sqm": 12600,
+          "rent_ref": 1800,
+          "commute_min": 51,
+          "lat": 30.6835,
+          "lng": 104.1432
+        }
+      ]
+    },
+    {
+      "code": "420100",
+      "name": "武汉",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 30.59,
+      "lng": 114.31,
+      "price_sqm": 16500.0,
+      "rent_sqm": 32.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "武汉·核心区",
+          "price_sqm": 21400,
+          "rent_ref": 2800,
+          "commute_min": 9,
+          "lat": 30.6104,
+          "lng": 114.3232
+        },
+        {
+          "key": "main",
+          "name": "武汉·主城区",
+          "price_sqm": 16500,
+          "rent_ref": 2200,
+          "commute_min": 25,
+          "lat": 30.6468,
+          "lng": 114.3466
+        },
+        {
+          "key": "suburb",
+          "name": "武汉·近郊新区",
+          "price_sqm": 11600,
+          "rent_ref": 1600,
+          "commute_min": 51,
+          "lat": 30.7035,
+          "lng": 114.3833
+        }
+      ]
+    },
+    {
+      "code": "610100",
+      "name": "西安",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 34.34,
+      "lng": 108.94,
+      "price_sqm": 15000.0,
+      "rent_sqm": 30.0,
+      "avg_salary": 8800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "西安·核心区",
+          "price_sqm": 19500,
+          "rent_ref": 2600,
+          "commute_min": 9,
+          "lat": 34.3604,
+          "lng": 108.9537
+        },
+        {
+          "key": "main",
+          "name": "西安·主城区",
+          "price_sqm": 15000,
+          "rent_ref": 2100,
+          "commute_min": 25,
+          "lat": 34.3968,
+          "lng": 108.9782
+        },
+        {
+          "key": "suburb",
+          "name": "西安·近郊新区",
+          "price_sqm": 10500,
+          "rent_ref": 1500,
+          "commute_min": 51,
+          "lat": 34.4535,
+          "lng": 109.0164
+        }
+      ]
+    },
+    {
+      "code": "500000",
+      "name": "重庆",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 29.56,
+      "lng": 106.55,
+      "price_sqm": 12000.0,
+      "rent_sqm": 28.0,
+      "avg_salary": 8500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "重庆·核心区",
+          "price_sqm": 15600,
+          "rent_ref": 2400,
+          "commute_min": 9,
+          "lat": 29.5804,
+          "lng": 106.563
+        },
+        {
+          "key": "main",
+          "name": "重庆·主城区",
+          "price_sqm": 12000,
+          "rent_ref": 2000,
+          "commute_min": 25,
+          "lat": 29.6168,
+          "lng": 106.5862
+        },
+        {
+          "key": "suburb",
+          "name": "重庆·近郊新区",
+          "price_sqm": 8400,
+          "rent_ref": 1400,
+          "commute_min": 51,
+          "lat": 29.6735,
+          "lng": 106.6225
+        }
+      ]
+    },
+    {
+      "code": "430100",
+      "name": "长沙",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 28.23,
+      "lng": 112.94,
+      "price_sqm": 11000.0,
+      "rent_sqm": 26.0,
+      "avg_salary": 8200.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "长沙·核心区",
+          "price_sqm": 14300,
+          "rent_ref": 2300,
+          "commute_min": 9,
+          "lat": 28.2504,
+          "lng": 112.9529
+        },
+        {
+          "key": "main",
+          "name": "长沙·主城区",
+          "price_sqm": 11000,
+          "rent_ref": 1800,
+          "commute_min": 25,
+          "lat": 28.2868,
+          "lng": 112.9758
+        },
+        {
+          "key": "suburb",
+          "name": "长沙·近郊新区",
+          "price_sqm": 7700,
+          "rent_ref": 1300,
+          "commute_min": 51,
+          "lat": 28.3435,
+          "lng": 113.0116
+        }
+      ]
+    },
+    {
+      "code": "410100",
+      "name": "郑州",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 34.75,
+      "lng": 113.63,
+      "price_sqm": 12000.0,
+      "rent_sqm": 26.0,
+      "avg_salary": 7800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "郑州·核心区",
+          "price_sqm": 15600,
+          "rent_ref": 2300,
+          "commute_min": 9,
+          "lat": 34.7704,
+          "lng": 113.6438
+        },
+        {
+          "key": "main",
+          "name": "郑州·主城区",
+          "price_sqm": 12000,
+          "rent_ref": 1800,
+          "commute_min": 25,
+          "lat": 34.8068,
+          "lng": 113.6684
+        },
+        {
+          "key": "suburb",
+          "name": "郑州·近郊新区",
+          "price_sqm": 8400,
+          "rent_ref": 1300,
+          "commute_min": 51,
+          "lat": 34.8635,
+          "lng": 113.7068
+        }
+      ]
+    },
+    {
+      "code": "340100",
+      "name": "合肥",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 31.86,
+      "lng": 117.28,
+      "price_sqm": 16000.0,
+      "rent_sqm": 28.0,
+      "avg_salary": 8500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "合肥·核心区",
+          "price_sqm": 20800,
+          "rent_ref": 2400,
+          "commute_min": 9,
+          "lat": 31.8804,
+          "lng": 117.2934
+        },
+        {
+          "key": "main",
+          "name": "合肥·主城区",
+          "price_sqm": 16000,
+          "rent_ref": 2000,
+          "commute_min": 25,
+          "lat": 31.9168,
+          "lng": 117.3171
+        },
+        {
+          "key": "suburb",
+          "name": "合肥·近郊新区",
+          "price_sqm": 11200,
+          "rent_ref": 1400,
+          "commute_min": 51,
+          "lat": 31.9735,
+          "lng": 117.3542
+        }
+      ]
+    },
+    {
+      "code": "440600",
+      "name": "佛山",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 23.02,
+      "lng": 113.12,
+      "price_sqm": 14000.0,
+      "rent_sqm": 27.0,
+      "avg_salary": 8500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "佛山·核心区",
+          "price_sqm": 18200,
+          "rent_ref": 2400,
+          "commute_min": 9,
+          "lat": 23.0404,
+          "lng": 113.1323
+        },
+        {
+          "key": "main",
+          "name": "佛山·主城区",
+          "price_sqm": 14000,
+          "rent_ref": 1900,
+          "commute_min": 25,
+          "lat": 23.0768,
+          "lng": 113.1543
+        },
+        {
+          "key": "suburb",
+          "name": "佛山·近郊新区",
+          "price_sqm": 9800,
+          "rent_ref": 1400,
+          "commute_min": 51,
+          "lat": 23.1335,
+          "lng": 113.1885
+        }
+      ]
+    },
+    {
+      "code": "441900",
+      "name": "东莞",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 23.02,
+      "lng": 113.75,
+      "price_sqm": 18000.0,
+      "rent_sqm": 30.0,
+      "avg_salary": 8800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "东莞·核心区",
+          "price_sqm": 23400,
+          "rent_ref": 2600,
+          "commute_min": 9,
+          "lat": 23.0404,
+          "lng": 113.7623
+        },
+        {
+          "key": "main",
+          "name": "东莞·主城区",
+          "price_sqm": 18000,
+          "rent_ref": 2100,
+          "commute_min": 25,
+          "lat": 23.0768,
+          "lng": 113.7843
+        },
+        {
+          "key": "suburb",
+          "name": "东莞·近郊新区",
+          "price_sqm": 12600,
+          "rent_ref": 1500,
+          "commute_min": 51,
+          "lat": 23.1335,
+          "lng": 113.8185
+        }
+      ]
+    },
+    {
+      "code": "320200",
+      "name": "无锡",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 31.49,
+      "lng": 120.31,
+      "price_sqm": 17000.0,
+      "rent_sqm": 30.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "无锡·核心区",
+          "price_sqm": 22100,
+          "rent_ref": 2600,
+          "commute_min": 9,
+          "lat": 31.5104,
+          "lng": 120.3233
+        },
+        {
+          "key": "main",
+          "name": "无锡·主城区",
+          "price_sqm": 17000,
+          "rent_ref": 2100,
+          "commute_min": 25,
+          "lat": 31.5468,
+          "lng": 120.347
+        },
+        {
+          "key": "suburb",
+          "name": "无锡·近郊新区",
+          "price_sqm": 11900,
+          "rent_ref": 1500,
+          "commute_min": 51,
+          "lat": 31.6035,
+          "lng": 120.384
+        }
+      ]
+    },
+    {
+      "code": "350100",
+      "name": "福州",
+      "tier": 2,
+      "tier_label": "新一线",
+      "lat": 26.07,
+      "lng": 119.3,
+      "price_sqm": 22000.0,
+      "rent_sqm": 34.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "福州·核心区",
+          "price_sqm": 28600,
+          "rent_ref": 3000,
+          "commute_min": 9,
+          "lat": 26.0904,
+          "lng": 119.3126
+        },
+        {
+          "key": "main",
+          "name": "福州·主城区",
+          "price_sqm": 22000,
+          "rent_ref": 2400,
+          "commute_min": 25,
+          "lat": 26.1268,
+          "lng": 119.3351
+        },
+        {
+          "key": "suburb",
+          "name": "福州·近郊新区",
+          "price_sqm": 15400,
+          "rent_ref": 1700,
+          "commute_min": 51,
+          "lat": 26.1835,
+          "lng": 119.3702
+        }
+      ]
+    },
+    {
+      "code": "530100",
+      "name": "昆明",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 25.04,
+      "lng": 102.71,
+      "price_sqm": 11500.0,
+      "rent_sqm": 26.0,
+      "avg_salary": 7500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "昆明·核心区",
+          "price_sqm": 15000,
+          "rent_ref": 2300,
+          "commute_min": 8,
+          "lat": 25.0561,
+          "lng": 102.7198
+        },
+        {
+          "key": "main",
+          "name": "昆明·主城区",
+          "price_sqm": 11500,
+          "rent_ref": 1800,
+          "commute_min": 21,
+          "lat": 25.0846,
+          "lng": 102.7373
+        },
+        {
+          "key": "suburb",
+          "name": "昆明·近郊新区",
+          "price_sqm": 8000,
+          "rent_ref": 1300,
+          "commute_min": 42,
+          "lat": 25.1292,
+          "lng": 102.7647
+        }
+      ]
+    },
+    {
+      "code": "450100",
+      "name": "南宁",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 22.82,
+      "lng": 108.37,
+      "price_sqm": 10500.0,
+      "rent_sqm": 27.0,
+      "avg_salary": 7200.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": []
+    },
+    {
+      "code": "520100",
+      "name": "贵阳",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 26.65,
+      "lng": 106.63,
+      "price_sqm": 9500.0,
+      "rent_sqm": 24.0,
+      "avg_salary": 7000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "贵阳·核心区",
+          "price_sqm": 12400,
+          "rent_ref": 2100,
+          "commute_min": 8,
+          "lat": 26.6661,
+          "lng": 106.64
+        },
+        {
+          "key": "main",
+          "name": "贵阳·主城区",
+          "price_sqm": 9500,
+          "rent_ref": 1700,
+          "commute_min": 21,
+          "lat": 26.6946,
+          "lng": 106.6577
+        },
+        {
+          "key": "suburb",
+          "name": "贵阳·近郊新区",
+          "price_sqm": 6600,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 26.7392,
+          "lng": 106.6854
+        }
+      ]
+    },
+    {
+      "code": "360100",
+      "name": "南昌",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 28.68,
+      "lng": 115.86,
+      "price_sqm": 12000.0,
+      "rent_sqm": 25.0,
+      "avg_salary": 7500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "南昌·核心区",
+          "price_sqm": 15600,
+          "rent_ref": 2200,
+          "commute_min": 8,
+          "lat": 28.6961,
+          "lng": 115.8702
+        },
+        {
+          "key": "main",
+          "name": "南昌·主城区",
+          "price_sqm": 12000,
+          "rent_ref": 1800,
+          "commute_min": 21,
+          "lat": 28.7246,
+          "lng": 115.8882
+        },
+        {
+          "key": "suburb",
+          "name": "南昌·近郊新区",
+          "price_sqm": 8400,
+          "rent_ref": 1300,
+          "commute_min": 42,
+          "lat": 28.7692,
+          "lng": 115.9165
+        }
+      ]
+    },
+    {
+      "code": "370100",
+      "name": "济南",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 36.65,
+      "lng": 117.12,
+      "price_sqm": 15000.0,
+      "rent_sqm": 28.0,
+      "avg_salary": 8500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "济南·核心区",
+          "price_sqm": 19500,
+          "rent_ref": 2400,
+          "commute_min": 8,
+          "lat": 36.6661,
+          "lng": 117.1311
+        },
+        {
+          "key": "main",
+          "name": "济南·主城区",
+          "price_sqm": 15000,
+          "rent_ref": 2000,
+          "commute_min": 21,
+          "lat": 36.6946,
+          "lng": 117.1509
+        },
+        {
+          "key": "suburb",
+          "name": "济南·近郊新区",
+          "price_sqm": 10500,
+          "rent_ref": 1400,
+          "commute_min": 42,
+          "lat": 36.7392,
+          "lng": 117.1818
+        }
+      ]
+    },
+    {
+      "code": "210200",
+      "name": "大连",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 38.91,
+      "lng": 121.61,
+      "price_sqm": 13000.0,
+      "rent_sqm": 28.0,
+      "avg_salary": 8000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "大连·核心区",
+          "price_sqm": 16900,
+          "rent_ref": 2400,
+          "commute_min": 8,
+          "lat": 38.9261,
+          "lng": 121.6215
+        },
+        {
+          "key": "main",
+          "name": "大连·主城区",
+          "price_sqm": 13000,
+          "rent_ref": 2000,
+          "commute_min": 21,
+          "lat": 38.9546,
+          "lng": 121.6418
+        },
+        {
+          "key": "suburb",
+          "name": "大连·近郊新区",
+          "price_sqm": 9100,
+          "rent_ref": 1400,
+          "commute_min": 42,
+          "lat": 38.9992,
+          "lng": 121.6737
+        }
+      ]
+    },
+    {
+      "code": "210100",
+      "name": "沈阳",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 41.8,
+      "lng": 123.43,
+      "price_sqm": 10000.0,
+      "rent_sqm": 24.0,
+      "avg_salary": 7000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "沈阳·核心区",
+          "price_sqm": 13000,
+          "rent_ref": 2100,
+          "commute_min": 8,
+          "lat": 41.8161,
+          "lng": 123.442
+        },
+        {
+          "key": "main",
+          "name": "沈阳·主城区",
+          "price_sqm": 10000,
+          "rent_ref": 1700,
+          "commute_min": 21,
+          "lat": 41.8446,
+          "lng": 123.4632
+        },
+        {
+          "key": "suburb",
+          "name": "沈阳·近郊新区",
+          "price_sqm": 7000,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 41.8892,
+          "lng": 123.4965
+        }
+      ]
+    },
+    {
+      "code": "230100",
+      "name": "哈尔滨",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 45.8,
+      "lng": 126.53,
+      "price_sqm": 9500.0,
+      "rent_sqm": 23.0,
+      "avg_salary": 6800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "哈尔滨·核心区",
+          "price_sqm": 12400,
+          "rent_ref": 2000,
+          "commute_min": 8,
+          "lat": 45.8161,
+          "lng": 126.5428
+        },
+        {
+          "key": "main",
+          "name": "哈尔滨·主城区",
+          "price_sqm": 9500,
+          "rent_ref": 1600,
+          "commute_min": 21,
+          "lat": 45.8446,
+          "lng": 126.5655
+        },
+        {
+          "key": "suburb",
+          "name": "哈尔滨·近郊新区",
+          "price_sqm": 6600,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 45.8892,
+          "lng": 126.6011
+        }
+      ]
+    },
+    {
+      "code": "220100",
+      "name": "长春",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 43.82,
+      "lng": 125.32,
+      "price_sqm": 9500.0,
+      "rent_sqm": 23.0,
+      "avg_salary": 6800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "长春·核心区",
+          "price_sqm": 12400,
+          "rent_ref": 2000,
+          "commute_min": 8,
+          "lat": 43.8361,
+          "lng": 125.3324
+        },
+        {
+          "key": "main",
+          "name": "长春·主城区",
+          "price_sqm": 9500,
+          "rent_ref": 1600,
+          "commute_min": 21,
+          "lat": 43.8646,
+          "lng": 125.3543
+        },
+        {
+          "key": "suburb",
+          "name": "长春·近郊新区",
+          "price_sqm": 6600,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 43.9092,
+          "lng": 125.3887
+        }
+      ]
+    },
+    {
+      "code": "130100",
+      "name": "石家庄",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 38.04,
+      "lng": 114.51,
+      "price_sqm": 11000.0,
+      "rent_sqm": 24.0,
+      "avg_salary": 7200.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "石家庄·核心区",
+          "price_sqm": 14300,
+          "rent_ref": 2100,
+          "commute_min": 8,
+          "lat": 38.0561,
+          "lng": 114.5213
+        },
+        {
+          "key": "main",
+          "name": "石家庄·主城区",
+          "price_sqm": 11000,
+          "rent_ref": 1700,
+          "commute_min": 21,
+          "lat": 38.0846,
+          "lng": 114.5415
+        },
+        {
+          "key": "suburb",
+          "name": "石家庄·近郊新区",
+          "price_sqm": 7700,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 38.1292,
+          "lng": 114.5729
+        }
+      ]
+    },
+    {
+      "code": "140100",
+      "name": "太原",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 37.87,
+      "lng": 112.55,
+      "price_sqm": 10000.0,
+      "rent_sqm": 23.0,
+      "avg_salary": 7000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "太原·核心区",
+          "price_sqm": 13000,
+          "rent_ref": 2000,
+          "commute_min": 8,
+          "lat": 37.8861,
+          "lng": 112.5613
+        },
+        {
+          "key": "main",
+          "name": "太原·主城区",
+          "price_sqm": 10000,
+          "rent_ref": 1600,
+          "commute_min": 21,
+          "lat": 37.9146,
+          "lng": 112.5814
+        },
+        {
+          "key": "suburb",
+          "name": "太原·近郊新区",
+          "price_sqm": 7000,
+          "rent_ref": 1200,
+          "commute_min": 42,
+          "lat": 37.9592,
+          "lng": 112.6128
+        }
+      ]
+    },
+    {
+      "code": "460200",
+      "name": "三亚",
+      "tier": 3,
+      "tier_label": "二线",
+      "lat": 18.25,
+      "lng": 109.51,
+      "price_sqm": 28000.0,
+      "rent_sqm": 45.0,
+      "avg_salary": 8000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "三亚·核心区",
+          "price_sqm": 36400,
+          "rent_ref": 3900,
+          "commute_min": 8,
+          "lat": 18.2661,
+          "lng": 109.5194
+        },
+        {
+          "key": "main",
+          "name": "三亚·主城区",
+          "price_sqm": 28000,
+          "rent_ref": 3200,
+          "commute_min": 21,
+          "lat": 18.2946,
+          "lng": 109.5361
+        },
+        {
+          "key": "suburb",
+          "name": "三亚·近郊新区",
+          "price_sqm": 19600,
+          "rent_ref": 2300,
+          "commute_min": 42,
+          "lat": 18.3392,
+          "lng": 109.5622
+        }
+      ]
+    },
+    {
+      "code": "620100",
+      "name": "兰州",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 36.06,
+      "lng": 103.83,
+      "price_sqm": 9000.0,
+      "rent_sqm": 22.0,
+      "avg_salary": 6500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "兰州·核心区",
+          "price_sqm": 11700,
+          "rent_ref": 1900,
+          "commute_min": 6,
+          "lat": 36.0731,
+          "lng": 103.839
+        },
+        {
+          "key": "main",
+          "name": "兰州·主城区",
+          "price_sqm": 9000,
+          "rent_ref": 1500,
+          "commute_min": 18,
+          "lat": 36.0965,
+          "lng": 103.8551
+        },
+        {
+          "key": "suburb",
+          "name": "兰州·近郊新区",
+          "price_sqm": 6300,
+          "rent_ref": 1100,
+          "commute_min": 36,
+          "lat": 36.133,
+          "lng": 103.8801
+        }
+      ]
+    },
+    {
+      "code": "460100",
+      "name": "海口",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 20.04,
+      "lng": 110.32,
+      "price_sqm": 17000.0,
+      "rent_sqm": 30.0,
+      "avg_salary": 7800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "海口·核心区",
+          "price_sqm": 22100,
+          "rent_ref": 2600,
+          "commute_min": 6,
+          "lat": 20.0531,
+          "lng": 110.3278
+        },
+        {
+          "key": "main",
+          "name": "海口·主城区",
+          "price_sqm": 17000,
+          "rent_ref": 2100,
+          "commute_min": 18,
+          "lat": 20.0765,
+          "lng": 110.3416
+        },
+        {
+          "key": "suburb",
+          "name": "海口·近郊新区",
+          "price_sqm": 11900,
+          "rent_ref": 1500,
+          "commute_min": 36,
+          "lat": 20.113,
+          "lng": 110.3632
+        }
+      ]
+    },
+    {
+      "code": "440400",
+      "name": "珠海",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 22.27,
+      "lng": 113.58,
+      "price_sqm": 24000.0,
+      "rent_sqm": 35.0,
+      "avg_salary": 9000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "珠海·核心区",
+          "price_sqm": 31200,
+          "rent_ref": 3100,
+          "commute_min": 6,
+          "lat": 22.2831,
+          "lng": 113.5879
+        },
+        {
+          "key": "main",
+          "name": "珠海·主城区",
+          "price_sqm": 24000,
+          "rent_ref": 2400,
+          "commute_min": 18,
+          "lat": 22.3065,
+          "lng": 113.6019
+        },
+        {
+          "key": "suburb",
+          "name": "珠海·近郊新区",
+          "price_sqm": 16800,
+          "rent_ref": 1800,
+          "commute_min": 36,
+          "lat": 22.343,
+          "lng": 113.6238
+        }
+      ]
+    },
+    {
+      "code": "650100",
+      "name": "乌鲁木齐",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 43.83,
+      "lng": 87.62,
+      "price_sqm": 8500.0,
+      "rent_sqm": 22.0,
+      "avg_salary": 7000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "乌鲁木齐·核心区",
+          "price_sqm": 11000,
+          "rent_ref": 1900,
+          "commute_min": 6,
+          "lat": 43.8431,
+          "lng": 87.6301
+        },
+        {
+          "key": "main",
+          "name": "乌鲁木齐·主城区",
+          "price_sqm": 8500,
+          "rent_ref": 1500,
+          "commute_min": 18,
+          "lat": 43.8665,
+          "lng": 87.6481
+        },
+        {
+          "key": "suburb",
+          "name": "乌鲁木齐·近郊新区",
+          "price_sqm": 6000,
+          "rent_ref": 1100,
+          "commute_min": 36,
+          "lat": 43.903,
+          "lng": 87.6762
+        }
+      ]
+    },
+    {
+      "code": "150100",
+      "name": "呼和浩特",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 40.84,
+      "lng": 111.75,
+      "price_sqm": 9000.0,
+      "rent_sqm": 21.0,
+      "avg_salary": 6800.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "呼和浩特·核心区",
+          "price_sqm": 11700,
+          "rent_ref": 1800,
+          "commute_min": 6,
+          "lat": 40.8531,
+          "lng": 111.7596
+        },
+        {
+          "key": "main",
+          "name": "呼和浩特·主城区",
+          "price_sqm": 9000,
+          "rent_ref": 1500,
+          "commute_min": 18,
+          "lat": 40.8765,
+          "lng": 111.7768
+        },
+        {
+          "key": "suburb",
+          "name": "呼和浩特·近郊新区",
+          "price_sqm": 6300,
+          "rent_ref": 1100,
+          "commute_min": 36,
+          "lat": 40.913,
+          "lng": 111.8036
+        }
+      ]
+    },
+    {
+      "code": "640100",
+      "name": "银川",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 38.49,
+      "lng": 106.23,
+      "price_sqm": 8000.0,
+      "rent_sqm": 20.0,
+      "avg_salary": 6500.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "银川·核心区",
+          "price_sqm": 10400,
+          "rent_ref": 1800,
+          "commute_min": 6,
+          "lat": 38.5031,
+          "lng": 106.2393
+        },
+        {
+          "key": "main",
+          "name": "银川·主城区",
+          "price_sqm": 8000,
+          "rent_ref": 1400,
+          "commute_min": 18,
+          "lat": 38.5265,
+          "lng": 106.2559
+        },
+        {
+          "key": "suburb",
+          "name": "银川·近郊新区",
+          "price_sqm": 5600,
+          "rent_ref": 1000,
+          "commute_min": 36,
+          "lat": 38.563,
+          "lng": 106.2818
+        }
+      ]
+    },
+    {
+      "code": "630100",
+      "name": "西宁",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 36.62,
+      "lng": 101.78,
+      "price_sqm": 8500.0,
+      "rent_sqm": 21.0,
+      "avg_salary": 6600.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "西宁·核心区",
+          "price_sqm": 11000,
+          "rent_ref": 1800,
+          "commute_min": 6,
+          "lat": 36.6331,
+          "lng": 101.7891
+        },
+        {
+          "key": "main",
+          "name": "西宁·主城区",
+          "price_sqm": 8500,
+          "rent_ref": 1500,
+          "commute_min": 18,
+          "lat": 36.6565,
+          "lng": 101.8053
+        },
+        {
+          "key": "suburb",
+          "name": "西宁·近郊新区",
+          "price_sqm": 6000,
+          "rent_ref": 1100,
+          "commute_min": 36,
+          "lat": 36.693,
+          "lng": 101.8305
+        }
+      ]
+    },
+    {
+      "code": "540100",
+      "name": "拉萨",
+      "tier": 4,
+      "tier_label": "三线",
+      "lat": 29.65,
+      "lng": 91.14,
+      "price_sqm": 12000.0,
+      "rent_sqm": 30.0,
+      "avg_salary": 8000.0,
+      "source": "CITY_DB / 2025 基准表",
+      "zones": [
+        {
+          "key": "core",
+          "name": "拉萨·核心区",
+          "price_sqm": 15600,
+          "rent_ref": 2600,
+          "commute_min": 6,
+          "lat": 29.6631,
+          "lng": 91.1484
+        },
+        {
+          "key": "main",
+          "name": "拉萨·主城区",
+          "price_sqm": 12000,
+          "rent_ref": 2100,
+          "commute_min": 18,
+          "lat": 29.6865,
+          "lng": 91.1633
+        },
+        {
+          "key": "suburb",
+          "name": "拉萨·近郊新区",
+          "price_sqm": 8400,
+          "rent_ref": 1500,
+          "commute_min": 36,
+          "lat": 29.723,
+          "lng": 91.1866
+        }
+      ]
+    }
+  ]
+}

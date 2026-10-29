@@ -1,0 +1,74 @@
+[
+  {
+    "key": "青秀区",
+    "name": "青秀区",
+    "lat": 22.79,
+    "lng": 108.38,
+    "price_sqm": 15500,
+    "rent_ref": 3000,
+    "commute_min": 15
+  },
+  {
+    "key": "西乡塘区",
+    "name": "西乡塘区",
+    "lat": 22.84,
+    "lng": 108.28,
+    "price_sqm": 9500,
+    "rent_ref": 1600,
+    "commute_min": 28
+  },
+  {
+    "key": "江南区",
+    "name": "江南区",
+    "lat": 22.78,
+    "lng": 108.28,
+    "price_sqm": 8700,
+    "rent_ref": 1500,
+    "commute_min": 30
+  },
+  {
+    "key": "兴宁区",
+    "name": "兴宁区",
+    "lat": 22.85,
+    "lng": 108.33,
+    "price_sqm": 10200,
+    "rent_ref": 1900,
+    "commute_min": 22
+  },
+  {
+    "key": "良庆区",
+    "name": "良庆区",
+    "lat": 22.74,
+    "lng": 108.36,
+    "price_sqm": 12200,
+    "rent_ref": 2300,
+    "commute_min": 25
+  },
+  {
+    "key": "邕宁区",
+    "name": "邕宁区",
+    "lat": 22.76,
+    "lng": 108.48,
+    "price_sqm": 9100,
+    "rent_ref": 1600,
+    "commute_min": 35
+  },
+  {
+    "key": "武鸣区",
+    "name": "武鸣区",
+    "lat": 23.16,
+    "lng": 108.27,
+    "price_sqm": 6100,
+    "rent_ref": 1200,
+    "commute_min": 55
+  },
+  {
+    "key": "五象新区",
+    "name": "五象新区",
+    "lat": 22.72,
+    "lng": 108.35,
+    "price_sqm": 13300,
+    "rent_ref": 2500,
+    "commute_min": 20
+  }
+]
