@@ -313,6 +313,10 @@ class SimulationRequest(BaseModel):
 
     # 购房摩擦成本
     purchase_tax_rate: float = Field(ge=0, default=2.5)
+    # 🧱 V7.4 装修：买毛坯房的人，首付之外还有一笔硬装钱
+    house_decoration: str = Field(default="finished", description="rough 毛坯 / finished 已装修（默认不装修）")
+    reno_level: str = Field(default="standard", description="none 毛坯入住 / simple / standard / quality")
+    reno_budget_wan: float = Field(ge=0, default=0, description="装修预算（万元）；0 = 按当地水平自动估算")
 
     # 🧭 V6.1 风险姿态与隐形支出
     risk_mode: str = Field(pattern="^(steady|aggressive)$", default="steady")
@@ -434,6 +438,16 @@ class HousingFinanceEngine:
         self.repay_kind = req.repay_kind
         self.purchase_tax_rate = req.purchase_tax_rate / 100.0
 
+        # 🧱 V7.4 装修：毛坯房在首付之外还有一笔钱
+        #    · rough = 毛坯，要装修；finished = 已装修（二手房默认），我们不替用户算
+        #    · reno_budget_wan > 0 用用户填的；= 0 按当地水平自动估算
+        #    · reno_level = none 表示毛坯入住 / 自己找人装，模型不扣钱
+        self.house_decoration = req.house_decoration if req.house_decoration in ("rough", "finished") else "finished"
+        self.reno_level = req.reno_level if req.reno_level in ("none", "simple", "standard", "quality") else "standard"
+        self.reno_budget_yuan = max(0.0, float(req.reno_budget_wan)) * 10000
+        self.reno_enabled = self.house_decoration == "rough" and self.reno_level != "none"
+        self.reno_unit_sqm = 0.0
+
         # =============================================================
         # 🏙️ V2.0 空间异质性：把“地域”折算成可计算的系数
         # =============================================================
@@ -481,6 +495,30 @@ class HousingFinanceEngine:
 
         # 通勤时间货币化：按当地时薪折算（21.75 工作日 × 8 小时）
         self.hourly_wage = self.base_income / (21.75 * 8.0)
+
+    @staticmethod
+    def estimate_reno_unit(avg_salary: float, district_price_sqm: float,
+                           city_tier: int, area_sqm: float, level: str = "standard") -> float:
+        """装修单价估算（元/㎡，建筑面积口径，不含家具家电）。实现见 reno.py。"""
+        try:
+            import reno as _reno
+        except ImportError:  # pragma: no cover
+            return 0.0
+        return _reno.estimate_unit(avg_salary, district_price_sqm, city_tier, area_sqm, level)
+
+    def reno_total_yuan(self) -> float:
+        """这套房子的装修总价：用户填了就用用户的，否则按当地水平估。"""
+        if not self.reno_enabled:
+            self.reno_unit_sqm = 0.0
+            return 0.0
+        area = self.house_total_yuan / max(self.district_price_sqm, EPS_YUAN)
+        if self.reno_budget_yuan > 0:
+            self.reno_unit_sqm = self.reno_budget_yuan / max(area, 1.0)
+            return self.reno_budget_yuan
+        self.reno_unit_sqm = self.estimate_reno_unit(
+            self.city_avg_salary, self.district_price_sqm, self.city_tier, area, self.reno_level
+        )
+        return self.reno_unit_sqm * area
 
     @staticmethod
     def commute_score(minutes: float) -> float:
@@ -764,6 +802,18 @@ class HousingFinanceEngine:
         remain_cash -= actual_down_payment_yuan + purchase_tax_yuan
         remain_cash = max(0.0, remain_cash)
 
+        # 🧱 V7.4 装修：毛坯房这笔钱在首付之后马上要花。
+        #    不够也不枪毙方案——现实里很多人借钱装修、或者自己动手。
+        #    记缺口，扣抗风险分，期末把借款扣回去。
+        reno_total_yuan = self.reno_total_yuan()
+        reno_gap_yuan = 0.0
+        if reno_total_yuan > 0:
+            if remain_cash >= reno_total_yuan:
+                remain_cash -= reno_total_yuan
+            else:
+                reno_gap_yuan = reno_total_yuan - remain_cash
+                remain_cash = 0.0
+
         # 阶段2：还贷期
         loan_schedule = self.build_combo_loan_schedule(loan_year, actual_loan_principal)
         for m in range(loan_month):
@@ -827,6 +877,13 @@ class HousingFinanceEngine:
         buffer_score = min(1.0, min_buffer_months / max(self.buffer_months_required, 0.1))
         adapt_score = adapt_score * (0.55 + 0.45 * buffer_score)
 
+        # 🧱 装修缺口：借钱装出来的房子，抗风险能力是要打折的（最高扣 35%）
+        if reno_gap_yuan > 0:
+            gap_ratio = min(1.0, reno_gap_yuan / max(reno_total_yuan, 1.0))
+            adapt_score *= (1.0 - 0.35 * gap_ratio)
+            # 借的钱终归要还：期末资产里扣回去（不制造"借来的钱也是资产"的幻觉）
+            remain_cash = max(0.0, remain_cash - reno_gap_yuan)
+
         implied_rent_house = (self.base_rent * 12 / RENT_SALE_RATIO) / 10000
         target_house = self.req.house_total_wan
         rent_comfort = 82.0 if implied_rent_house >= target_house else 60.0 + 22.0 * (implied_rent_house / target_house)
@@ -884,6 +941,9 @@ class HousingFinanceEngine:
             "buffer_months": round(min_buffer_months, 2),
             "buffer_required": self.buffer_months_required,
             "purchase_price_wan": round(purchase_price_yuan / 10000, 2),
+            "reno_budget_wan": round(reno_total_yuan / 10000, 2),
+            "reno_gap_wan": round(reno_gap_yuan / 10000, 2),
+            "reno_unit_sqm": round(self.reno_unit_sqm, 0),
             "max_deficit_wan": round(max_deficit / 10000, 2),
             "comfort_spatial": round(comfort_spatial_life, 2),
             "rent_comfort_spatial": round(rent_comfort_spatial, 2),
