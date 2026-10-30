@@ -1439,24 +1439,23 @@ def simulate_with_anchor(req: AnchorRequest):
             key=lambda x: (abs(x["rent_year"] - ry) * 100 + abs(x["loan_year"] - ly),
                            -x["comprehensive_score"]),
         )[:3]
-        return {
-            "code": 200,
+        result = dict(base)
+        result.update({
             "mode": "anchor",
             "feasible": False,
             "anchor_request": {"rent_year": ry, "loan_year": ly, "down_strategy": ds},
             "reason": "这个组合在你的收入、首付和支出下过不了风控：要么首付+税费凑不齐，要么还贷期支出超过收入红线。",
             "near_feasible": near,
-            "warning": base.get("warning"),
-            "spatial": base.get("spatial"),
-            "risk": base.get("risk"),
-            "career": base.get("career"),
-            "market": base.get("market"),
-            "top_comprehensive": base.get("top_comprehensive"),
-            "all_scheme": all_scheme,
-        }
+        })
+        return result
 
     anchor = score_against_reference(raw, all_scheme, ew)
     best = base["top_comprehensive"][0] if base["top_comprehensive"] else anchor
+
+    # 推荐方案也要一份逐月/逐年明细，前端才能做左右对比
+    best_raw = engine.single_scenario_sim(
+        best["rent_year"], best["loan_year"], best["down_strategy"], with_timeline=True
+    ) if best else None
 
     # 排名：在全部可行方案里的位次
     rank = 1 + sum(1 for x in all_scheme if x["comprehensive_score"] > anchor["comprehensive_score"])
@@ -1470,8 +1469,10 @@ def simulate_with_anchor(req: AnchorRequest):
         "buffer_months": round(best["buffer_months"] - anchor["buffer_months"], 2),
     }
 
-    return {
-        "code": 200,
+    # ⚠️ 以全量结果为底再覆盖：style_boards / top_* 这些字段一个都不能漏，
+    #    漏了前端三个风格 tab 就是空的（V7.7 的 bug 就出在这里）
+    result = dict(base)
+    result.update({
         "mode": "anchor",
         "feasible": True,
         "anchor_request": {"rent_year": ry, "loan_year": ly, "down_strategy": ds},
@@ -1481,15 +1482,10 @@ def simulate_with_anchor(req: AnchorRequest):
         "total": len(all_scheme),
         "delta": delta,
         "timeline": anchor.get("timeline"),
-        "assumptions": base["assumptions"],
-        "spatial": base["spatial"],
-        "risk": base["risk"],
-        "career": base["career"],
-        "market": base["market"],
-        "top_comprehensive": base["top_comprehensive"],
-        "all_scheme": all_scheme,
-        "warning": base.get("warning"),
-    }
+        "best_months": (best_raw or {}).get("months"),
+        "best_timeline": (best_raw or {}).get("timeline"),
+    })
+    return result
 
 
 @app.get("/api/cities")
