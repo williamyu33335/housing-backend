@@ -749,6 +749,7 @@ class HousingFinanceEngine:
         min_buffer_months = float('inf')
         # 📊 V7.5 逐年明细（只在锚点方案要展示时收集，不拖慢 1800 组遍历）
         timeline_raw = [] if with_timeline else None
+        month_raw = [] if with_timeline else None   # 前 24 个月，看第一个月到底要掏多少
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
@@ -787,6 +788,9 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "rent"))
+            if month_raw is not None and len(month_raw) < 24:
+                month_raw.append((t + 1, "rent", current_income, real_monthly_outflow,
+                                  monthly_net, remain_cash))
 
         # 🏠 购房时点的房价：可选年增值（默认 0 = 不预测涨跌）
         purchase_price_yuan = self.house_total_yuan * ((1 + self.house_growth) ** rent_year)
@@ -852,6 +856,9 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "loan"))
+            if month_raw is not None and len(month_raw) < 24:
+                month_raw.append((current_idx + 1, "loan", current_income, real_monthly_outflow,
+                                  monthly_net, remain_cash))
 
         # 阶段3：自由期
         rest_month = SIM_TOTAL_YEARS * 12 - rent_month - loan_month
@@ -879,6 +886,9 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "free"))
+            if month_raw is not None and len(month_raw) < 24:
+                month_raw.append((current_idx + 1, "free", current_income, real_monthly_outflow,
+                                  monthly_net, remain_cash))
 
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
@@ -939,6 +949,17 @@ class HousingFinanceEngine:
             ),
         )
 
+        months = None
+        if month_raw is not None:
+            months = [{
+                "month": m,
+                "phase": phase,
+                "income": round(income, 0),
+                "outflow": round(outflow, 0),
+                "surplus": round(net, 0),
+                "end_cash": round(cash, 0),
+            } for m, phase, income, outflow, net, cash in month_raw]
+
         timeline = None
         if timeline_raw is not None:
             years = {}
@@ -981,6 +1002,7 @@ class HousingFinanceEngine:
             "reno_gap_wan": round(reno_gap_yuan / 10000, 2),
             "reno_unit_sqm": round(self.reno_unit_sqm, 0),
             "timeline": timeline,
+            "months": months,
             "max_deficit_wan": round(max_deficit / 10000, 2),
             "comfort_spatial": round(comfort_spatial_life, 2),
             "rent_comfort_spatial": round(rent_comfort_spatial, 2),
@@ -1081,18 +1103,39 @@ def build_diversified_by_rent(out_list: List[Dict]) -> Dict[str, List[Dict]]:
     return groups
 
 
+# ⚡ 速度型：四维都及格的前提下，谁最早"完成任务"（租房 + 还贷 年限最短）
+SPEED_PASS = 60.0
+SPEED_RELAX = 50.0
+
+
 def build_style_boards(out_list: List[Dict]) -> Dict[str, List[Dict]]:
-    # 将首付策略（进取/稳健）自然地映射到风格看板中
+    """风格看板。
+
+    · 稳健型：抗风险分最高（首付不激进，留缓冲）
+    · 速度型：四项（抗风险/舒适/幸福/时间）都过及格线，然后按"租+贷 总年限"最短排——
+      它的含义是"别为了快把别的维度搞崩"，而不是"越快越好"
+    · 进取型：最低首付、把现金留在理财，看期末资产
+    """
+    dims = ("adapt_score", "comfort_score", "surplus_happiness", "time_efficiency")
+
+    def all_pass(x, line):
+        return all(x[d] >= line for d in dims)
+
+    qualified = [x for x in out_list if all_pass(x, SPEED_PASS)]
+    if not qualified:
+        qualified = [x for x in out_list if sum(x[d] >= SPEED_RELAX for d in dims) >= 3]
+    if not qualified:
+        qualified = out_list
+
     return {
         "稳健型": sorted(
             [x for x in out_list if x["down_strategy"] in ("max", "balanced")],
             key=lambda x: x["adapt_score"],
             reverse=True,
         )[:STYLE_TOP_N],
-        "平衡型": sorted(
-            [x for x in out_list if x["down_strategy"] == "balanced"],
-            key=lambda x: x["suitability_score"],
-            reverse=True,
+        "速度型": sorted(
+            qualified,
+            key=lambda x: (x["rent_year"] + x["loan_year"], -x["comprehensive_score"]),
         )[:STYLE_TOP_N],
         "进取型": sorted(
             [x for x in out_list if x["down_strategy"] == "min"],
