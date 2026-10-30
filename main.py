@@ -749,7 +749,7 @@ class HousingFinanceEngine:
         min_buffer_months = float('inf')
         # 📊 V7.5 逐年明细（只在锚点方案要展示时收集，不拖慢 1800 组遍历）
         timeline_raw = [] if with_timeline else None
-        month_raw = [] if with_timeline else None   # 前 24 个月，看第一个月到底要掏多少
+        month_raw = [] if with_timeline else None   # 完整 360 个月，前端按年下钻
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
@@ -788,7 +788,7 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "rent"))
-            if month_raw is not None and len(month_raw) < 24:
+            if month_raw is not None:
                 month_raw.append((t + 1, "rent", current_income, real_monthly_outflow,
                                   monthly_net, remain_cash))
 
@@ -856,7 +856,7 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "loan"))
-            if month_raw is not None and len(month_raw) < 24:
+            if month_raw is not None:
                 month_raw.append((current_idx + 1, "loan", current_income, real_monthly_outflow,
                                   monthly_net, remain_cash))
 
@@ -886,7 +886,7 @@ class HousingFinanceEngine:
             if timeline_raw is not None:
                 timeline_raw.append((year_idx, current_income, real_monthly_outflow,
                                      monthly_net, remain_cash, "free"))
-            if month_raw is not None and len(month_raw) < 24:
+            if month_raw is not None:
                 month_raw.append((current_idx + 1, "free", current_income, real_monthly_outflow,
                                   monthly_net, remain_cash))
 
