@@ -180,7 +180,9 @@ ENTROPY_INDICATORS = [
 MODEL_ASSUMPTIONS = [
     "流动资产仅计现金理财余额，不含房产残值、契税、维修基金等交易税费（坚决拒绝纸面财富幻觉）",
     "公积金缴存基数简化等同于输入的月收入；housing_fund_pct为个人+单位合计缴存比例，双边上限24%",
-    "租房阶段：公积金按月提取，计入当月可支配现金流；购房还贷阶段，公积金按月对冲抵扣月供",
+    "公积金只能用于购房/还贷，不计入每月可支配现金；输入按税后到手理解，公积金账户余额不计入期末现金资产",
+    "不交公积金的 opt-out 现金流（只省个人部分、企业配缴同时消失）暂未建模，避免把企业配缴误当现金",
+    "租房阶段：公积金不计入可支配现金流（只能用于购房/还贷）；购房还贷阶段，公积金按月对冲抵扣月供",
     "租金按年度复利调价，同一年内12个月租金固定不变",
     "严苛财务红线：无论何种方案，购房还贷期（真实月供+生活开销+物业费）超过月收入 70% 的组合将被直接一票否决剔除",
     "小康家庭定义：全周期平均月度纯现金结余必须达到或超过总收入的 50%，抗拒沦为被账单绑架的打工机器",
@@ -688,11 +690,18 @@ class HousingFinanceEngine:
     def get_current_fund(self, year_idx: int) -> float:
         """当年每月公积金入账（个人+单位），随薪资 S 曲线增长。
 
-        V7.10：公积金是用户自己的钱。租房期进现金、还贷期先抵扣月供、
-        剩余部分进现金、还完贷以后继续进现金。旧版在自由期把这块直接丢了，
-        等于“贷款还得越快，公积金越早消失”，系统性偏向长贷方案。
+        V7.10.1：公积金只能用于购房/还贷，不是可支配现金。
+        个人部分是从工资里扣的，企业部分是配的；不交时只省下个人部分。
         """
         return self.get_current_income(year_idx) * (self.req.housing_fund_pct / 100.0)
+
+    def get_current_cash_income(self, year_idx: int) -> float:
+        """到手现金。
+
+        `monthly_income_net` 按“税后到手”理解；公积金是独立账户，
+        不从这里再加一次，也不从中扣一次。opt-out 的现金增量暂不建模。
+        """
+        return self.get_current_income(year_idx)
 
     def _fail(self, code: str, **detail):
         """记录这一组组合为什么不可行，供锚点接口给出具体原因。"""
@@ -776,7 +785,7 @@ class HousingFinanceEngine:
                 remain_cash -= car_down
 
             year_idx = t // 12
-            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
+            current_cash = self.get_current_cash_income(year_idx)
             current_fund = self.get_current_fund(year_idx)
             current_rent = self.base_rent * ((1 + self.rent_inflation) ** year_idx)
 
@@ -788,7 +797,7 @@ class HousingFinanceEngine:
                 + car_cost
                 + self.rent_transport_month
             )
-            ratio = real_monthly_outflow / current_income
+            ratio = real_monthly_outflow / current_cash
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
             # 稳健模式不设租房硬顶（压力交给抗风险得分）；
             # 悬崖模式用 90% 生存线兜底，擦边通过。
@@ -796,8 +805,9 @@ class HousingFinanceEngine:
                 return self._fail("rent_cap", phase="rent", year=year_idx + 1,
                                   ratio=round(ratio, 4), cap=self.rent_cap)
 
-            monthly_net = (current_income + current_fund) - real_monthly_outflow
-            total_months_surplus_rate += monthly_net / current_income
+            # 公积金专款专用，只能购房/还贷，不进可支配现金。
+            monthly_net = current_cash - real_monthly_outflow
+            total_months_surplus_rate += monthly_net / current_cash
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             if remain_cash < -EPS_YUAN:
                 return self._fail("cash_negative", phase="rent", year=year_idx + 1,
@@ -807,13 +817,13 @@ class HousingFinanceEngine:
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
             if timeline_raw is not None:
-                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                timeline_raw.append((year_idx, current_cash, real_monthly_outflow,
                                      monthly_net, remain_cash, "rent",
-                                     0.0, current_fund, 0.0, current_fund))
+                                     0.0, current_fund, 0.0, 0.0))
             if month_raw is not None:
-                month_raw.append((t + 1, "rent", current_income, real_monthly_outflow,
+                month_raw.append((t + 1, "rent", current_cash, real_monthly_outflow,
                                   monthly_net, remain_cash,
-                                  0.0, current_fund, 0.0, current_fund))
+                                  0.0, current_fund, 0.0, 0.0))
 
         # 🏠 购房时点的房价：可选年增值（默认 0 = 不预测涨跌）
         purchase_price_yuan = self.house_total_yuan * ((1 + self.house_growth) ** rent_year)
@@ -861,24 +871,25 @@ class HousingFinanceEngine:
                 remain_cash -= car_down
 
             year_idx = rent_year + (m // 12)
-            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
+            current_cash = self.get_current_cash_income(year_idx)
             current_fund = self.get_current_fund(year_idx)
 
-            # 公积金先抵扣月供；抵不完的部分才是自付；抵完还有剩的，是你的钱，进现金。
+            # 公积金先抵扣月供；抵不完的部分才是自付。
+            # 公积金是专款专用的账户余额，不能当现金花；结余也不进现金。
             fund_deduct = min(current_fund, loan_schedule[m])
             actual_out_of_pocket = loan_schedule[m] - fund_deduct
-            fund_surplus = current_fund - fund_deduct
+            fund_surplus = 0.0
             car_cost = get_car_cost(current_idx)
             
             real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + actual_out_of_pocket + car_cost + self.own_transport_month
-            ratio = real_monthly_outflow / current_income
+            ratio = real_monthly_outflow / current_cash
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
-            if real_monthly_outflow > (current_income * self.loan_cap):
+            if real_monthly_outflow > (current_cash * self.loan_cap):
                 return self._fail("loan_cap", phase="loan", year=year_idx + 1,
                                   ratio=round(ratio, 4), cap=self.loan_cap)
 
-            monthly_net = current_income + fund_surplus - real_monthly_outflow
-            total_months_surplus_rate += monthly_net / current_income
+            monthly_net = current_cash - real_monthly_outflow
+            total_months_surplus_rate += monthly_net / current_cash
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             if remain_cash < -EPS_YUAN:
                 return self._fail("cash_negative", phase="loan", year=year_idx + 1,
@@ -888,12 +899,12 @@ class HousingFinanceEngine:
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
             if timeline_raw is not None:
-                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                timeline_raw.append((year_idx, current_cash, real_monthly_outflow,
                                      monthly_net, remain_cash, "loan",
                                      loan_schedule[m], current_fund,
                                      actual_out_of_pocket, fund_surplus))
             if month_raw is not None:
-                month_raw.append((current_idx + 1, "loan", current_income, real_monthly_outflow,
+                month_raw.append((current_idx + 1, "loan", current_cash, real_monthly_outflow,
                                   monthly_net, remain_cash,
                                   loan_schedule[m], current_fund,
                                   actual_out_of_pocket, fund_surplus))
@@ -908,30 +919,30 @@ class HousingFinanceEngine:
                 remain_cash -= car_down
 
             year_idx = rent_year + loan_year + (m // 12)
-            current_income = self.get_current_income(year_idx) # 🌟 调用新算法
+            current_cash = self.get_current_cash_income(year_idx)
             current_fund = self.get_current_fund(year_idx)
             car_cost = get_car_cost(current_idx)
             
             real_monthly_outflow = self.get_current_expense(year_idx) + self.month_property + car_cost + self.own_transport_month
-            ratio = real_monthly_outflow / current_income
+            ratio = real_monthly_outflow / current_cash
             if ratio > max_outflow_ratio: max_outflow_ratio = ratio
 
-            # 贷款还完了，公积金不再抵扣月供，但钱还是你的，继续进现金。
-            monthly_net = current_income + current_fund - real_monthly_outflow
-            total_months_surplus_rate += monthly_net / current_income
+            # 贷款还完了，公积金仍然只能用于购房/还贷，不是可支配现金。
+            monthly_net = current_cash - real_monthly_outflow
+            total_months_surplus_rate += monthly_net / current_cash
             remain_cash = remain_cash * (1 + self.month_invest_rate) + monthly_net
             remain_cash = max(0.0, remain_cash)
             if remain_cash < min_cash: min_cash = remain_cash
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
             if timeline_raw is not None:
-                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                timeline_raw.append((year_idx, current_cash, real_monthly_outflow,
                                      monthly_net, remain_cash, "free",
-                                     0.0, current_fund, 0.0, current_fund))
+                                     0.0, current_fund, 0.0, 0.0))
             if month_raw is not None:
-                month_raw.append((current_idx + 1, "free", current_income, real_monthly_outflow,
+                month_raw.append((current_idx + 1, "free", current_cash, real_monthly_outflow,
                                   monthly_net, remain_cash,
-                                  0.0, current_fund, 0.0, current_fund))
+                                  0.0, current_fund, 0.0, 0.0))
 
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
@@ -1496,62 +1507,118 @@ def _anchor_failure_reason(fail: Optional[Dict], ry: int, ly: int) -> str:
     return "这个组合在你的收入、首付和支出下过不了风控。"
 
 
+def _no_self_pay_from(rows: List[Dict]) -> Optional[int]:
+    """从哪一年起，这套方案不再有“自付房贷”。
+
+    包含两种情况：
+      · 已经还完（free）；
+      · 还在还贷，但月供被公积金全额覆盖（self_pay = 0）。
+    租房期不算——房租仍然是支出。
+    """
+    for i, row in enumerate(rows):
+        if row.get("phase") == "rent":
+            continue
+        if all(
+            later.get("phase") != "rent" and later.get("self_pay_wan", 0) <= 0.02
+            for later in rows[i:]
+        ):
+            return row["year"]
+    return None
+
+
 def _compare_diagnostics(anchor: Dict, best_raw: Optional[Dict]) -> Dict:
     """解释“为什么你的贷款还完了，两边支出却一样”。
 
-    只有一种情况是合理的：推荐方案还有房贷，但月供已经被公积金全额覆盖，
-    自付 = 0。此时两边剩下的都只是生活、物业、交通。若推荐方案仍有自付，
-    两边支出却相同，那就是算法问题，前端要显式报警。
+    不要求用户已经还完：只要两边都进入“没有自付房贷”的状态
+    （已还完，或月供被公积金全覆盖），后面的支出就都只剩生活、物业、交通。
+    如果在仍有自付房贷的情况下支出却相同，才是算法问题，前端要显式报警。
     """
     a_rows = anchor.get("timeline") or []
     b_rows = (best_raw or {}).get("timeline") or []
     if not a_rows or not b_rows:
         return {}
 
+    a_by = {r["year"]: r for r in a_rows}
+    b_by = {r["year"]: r for r in b_rows}
     user_free = next((r["year"] for r in a_rows if r["phase"] == "free"), None)
-    loan_rows = [r for r in b_rows if r["phase"] == "loan"]
-    best_zero = next((r["year"] for r in loan_rows
-                      if r.get("self_pay_wan", 0) <= 0.005), None)
-    if best_zero is not None and any(
-        r.get("self_pay_wan", 0) > 0.005 for r in loan_rows if r["year"] >= best_zero
-    ):
-        best_zero = None
+    best_free = next((r["year"] for r in b_rows if r["phase"] == "free"), None)
+    user_cut = _no_self_pay_from(a_rows)
+    best_cut = _no_self_pay_from(b_rows)
+    both_cut = max([x for x in (user_cut, best_cut) if x], default=None)
 
     equal_from = None
-    best_at_equal = None
-    equal_reason = None
-    if user_free:
-        b_by_year = {r["year"]: r for r in b_rows}
+    a_at_equal = None
+    b_at_equal = None
+    if both_cut:
         for i, row in enumerate(a_rows):
-            if row["year"] < user_free:
+            y = row["year"]
+            if y < both_cut:
                 continue
-            b = b_by_year.get(row["year"])
+            b = b_by.get(y)
             if b is None or abs(row["outflow_wan"] - b["outflow_wan"]) > 0.01:
                 continue
+            later_rows = a_rows[i:]
             if all(
-                (b_by_year.get(later["year"]) is not None
-                 and abs(later["outflow_wan"] - b_by_year[later["year"]]["outflow_wan"]) <= 0.01)
-                for later in a_rows[i:]
+                b_by.get(later["year"]) is not None
+                and abs(later["outflow_wan"] - b_by[later["year"]]["outflow_wan"]) <= 0.01
+                for later in later_rows
             ):
-                equal_from = row["year"]
-                best_at_equal = b
+                equal_from = y
+                a_at_equal = row
+                b_at_equal = b
                 break
 
-    if equal_from is not None and best_at_equal is not None:
-        if best_at_equal.get("phase") == "free":
+    equal_reason = None
+    if equal_from is not None and a_at_equal and b_at_equal:
+        if a_at_equal.get("phase") == "free" and b_at_equal.get("phase") == "free":
             equal_reason = "both_free"
-        elif best_at_equal.get("self_pay_wan", 0) <= 0.005:
+        elif a_at_equal.get("self_pay_wan", 0) <= 0.02 and b_at_equal.get("self_pay_wan", 0) <= 0.02:
             equal_reason = "fund_covers"
         else:
             equal_reason = "unexplained"
 
+    # 真 bug 的信号：还有明显自付，支出却相同
+    unexplained_from = None
+    for y in range(1, SIM_TOTAL_YEARS + 1):
+        a, b = a_by.get(y), b_by.get(y)
+        if not a or not b:
+            continue
+        if abs(a["outflow_wan"] - b["outflow_wan"]) > 0.01:
+            continue
+        if a.get("self_pay_wan", 0) > 0.02 or b.get("self_pay_wan", 0) > 0.02:
+            unexplained_from = y
+            break
+
+    # 追平之前，你的支出更低的那一段（只取紧挨着追平点的一段）
+    lower_from = lower_to = None
+    lower_diffs = []
+    if equal_from:
+        y = equal_from - 1
+        while y >= 1:
+            a, b = a_by.get(y), b_by.get(y)
+            if not a or not b or not (a["outflow_wan"] < b["outflow_wan"] - 0.01):
+                break
+            lower_from = y
+            lower_diffs.append(b["outflow_wan"] - a["outflow_wan"])
+            y -= 1
+        lower_to = equal_from - 1 if lower_from else None
+
     return {
         "user_loan_end_year": user_free,
-        "best_self_pay_zero_year": best_zero,
+        "best_loan_end_year": best_free,
+        "user_no_self_pay_from_year": user_cut,
+        "best_no_self_pay_from_year": best_cut,
         "outflow_equal_from_year": equal_from,
-        "best_phase_at_equal": (best_at_equal or {}).get("phase"),
+        "user_phase_at_equal": (a_at_equal or {}).get("phase"),
+        "best_phase_at_equal": (b_at_equal or {}).get("phase"),
         "equal_outflow_reason": equal_reason,
-        "same_outflow_explained": equal_reason in ("both_free", "fund_covers"),
+        "user_lower_from_year": lower_from,
+        "user_lower_to_year": lower_to,
+        "user_lower_avg_wan": round(sum(lower_diffs) / len(lower_diffs), 2) if lower_diffs else 0.0,
+        "unexplained_from_year": unexplained_from,
+        "same_outflow_explained": bool(
+            equal_from and equal_reason in ("both_free", "fund_covers") and not unexplained_from
+        ),
     }
 
 
