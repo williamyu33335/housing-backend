@@ -712,7 +712,8 @@ class HousingFinanceEngine:
         comm_schedule = calc_schedule(comm_loan_yuan, self.loan_year_rate)
         return [prov_schedule[i] + comm_schedule[i] for i in range(n)]
 
-    def single_scenario_sim(self, rent_year: int, loan_year: int, down_strategy: str) -> Optional[Dict]:
+    def single_scenario_sim(self, rent_year: int, loan_year: int, down_strategy: str,
+                            with_timeline: bool = False) -> Optional[Dict]:
         if loan_year > (SIM_TOTAL_YEARS - rent_year): return None
 
         rent_month = rent_year * 12
@@ -746,6 +747,8 @@ class HousingFinanceEngine:
         max_outflow_ratio = 0.0
         min_cash = self.init_saving
         min_buffer_months = float('inf')
+        # 📊 V7.5 逐年明细（只在锚点方案要展示时收集，不拖慢 1800 组遍历）
+        timeline_raw = [] if with_timeline else None
 
         # 阶段1：租房攒首付
         for t in range(rent_month):
@@ -781,6 +784,9 @@ class HousingFinanceEngine:
             if remain_cash < min_cash: min_cash = remain_cash
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
+            if timeline_raw is not None:
+                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                                     monthly_net, remain_cash, "rent"))
 
         # 🏠 购房时点的房价：可选年增值（默认 0 = 不预测涨跌）
         purchase_price_yuan = self.house_total_yuan * ((1 + self.house_growth) ** rent_year)
@@ -843,6 +849,9 @@ class HousingFinanceEngine:
             if remain_cash < min_cash: min_cash = remain_cash
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
+            if timeline_raw is not None:
+                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                                     monthly_net, remain_cash, "loan"))
 
         # 阶段3：自由期
         rest_month = SIM_TOTAL_YEARS * 12 - rent_month - loan_month
@@ -867,6 +876,9 @@ class HousingFinanceEngine:
             if remain_cash < min_cash: min_cash = remain_cash
             if real_monthly_outflow > 1:
                 min_buffer_months = min(min_buffer_months, remain_cash / real_monthly_outflow)
+            if timeline_raw is not None:
+                timeline_raw.append((year_idx, current_income, real_monthly_outflow,
+                                     monthly_net, remain_cash, "free"))
 
         safety_margin = 0.70 - max_outflow_ratio
         adapt_score = min(100.0, max(0.0, (safety_margin / 0.40) * 100))
@@ -927,6 +939,28 @@ class HousingFinanceEngine:
             ),
         )
 
+        timeline = None
+        if timeline_raw is not None:
+            years = {}
+            for year_idx, income, outflow, net, cash, phase in timeline_raw:
+                y = years.setdefault(year_idx, {
+                    "year": year_idx + 1, "phase": phase,
+                    "income": 0.0, "outflow": 0.0, "net": 0.0, "end_cash": cash,
+                })
+                y["income"] += income
+                y["outflow"] += outflow
+                y["net"] += net
+                y["end_cash"] = cash
+                y["phase"] = phase
+            timeline = [{
+                "year": v["year"],
+                "phase": v["phase"],
+                "income_wan": round(v["income"] / 10000, 2),
+                "outflow_wan": round(v["outflow"] / 10000, 2),
+                "surplus_wan": round(v["net"] / 10000, 2),
+                "end_cash_wan": round(v["end_cash"] / 10000, 2),
+            } for v in sorted(years.values(), key=lambda x: x["year"])]
+
         return {
             "rent_year": rent_year, "loan_year": loan_year, "down_strategy": down_strategy,
             "occupied_years": round(occupied_years, 2),
@@ -941,9 +975,12 @@ class HousingFinanceEngine:
             "buffer_months": round(min_buffer_months, 2),
             "buffer_required": self.buffer_months_required,
             "purchase_price_wan": round(purchase_price_yuan / 10000, 2),
+            # 💸 总利息：用户凭直觉做判断时，脑子里算的就是这个数
+            "total_interest_wan": round((sum(loan_schedule) - actual_loan_principal) / 10000, 2),
             "reno_budget_wan": round(reno_total_yuan / 10000, 2),
             "reno_gap_wan": round(reno_gap_yuan / 10000, 2),
             "reno_unit_sqm": round(self.reno_unit_sqm, 0),
+            "timeline": timeline,
             "max_deficit_wan": round(max_deficit / 10000, 2),
             "comfort_spatial": round(comfort_spatial_life, 2),
             "rent_comfort_spatial": round(rent_comfort_spatial, 2),
@@ -1293,6 +1330,122 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
         "style_boards": build_style_boards(out_list),
         "cross_level_note": "绝对寻优模式：已启用多维首付策略自动组合。",
         "skipped_summary": {"feasible_by_rent_level": feasible_by_level},
+    }
+
+
+
+# =====================================================================
+# 🧭 V7.5 锚点方案：让用户先验算自己的打算
+# ---------------------------------------------------------------------
+# 信任不是靠"我算得准"这句话建立的，是靠"我的方案你算得跟我心里一样"建立的。
+# 所以：用户报出他打算怎么买（租几年、贷几年、首付怎么付），我们原样算一遍，
+# 把逐年明细摊开给他对账；对得上，他才有理由看我们推荐的那个。
+# =====================================================================
+class AnchorRequest(SimulationRequest):
+    anchor_rent_year: int = Field(ge=0, le=SIM_TOTAL_YEARS, default=5)
+    anchor_loan_year: int = Field(ge=1, le=SIM_TOTAL_YEARS, default=10)
+    anchor_down_strategy: str = Field(default="balanced")
+
+
+def score_against_reference(scheme: Dict, reference: List[Dict], ew: Dict) -> Dict:
+    """用全量方案的极差给单个方案打分，保证和排名里的分数可比。"""
+    item = dict(scheme)
+    mins = {k: min(x[f] for x in reference) for k, f in ENTROPY_INDICATORS}
+    maxs = {k: max(x[f] for x in reference) for k, f in ENTROPY_INDICATORS}
+    comp = 0.0
+    for k, f in ENTROPY_INDICATORS:
+        span = maxs[k] - mins[k]
+        if span < EPS_FLOAT:
+            norm_val = 0.0
+        else:
+            v = min(max(item[f], mins[k]), maxs[k])
+            norm_val = (v - mins[k]) / span
+        comp += norm_val * ew[f"weight_{k}"]
+    item["comprehensive_score"] = round(comp * 100, 2)
+    item["suitability_score"] = round(
+        item["comfort_score"] * SUITABILITY_WEIGHTS["comfort"]
+        + item["adapt_score"] * SUITABILITY_WEIGHTS["adapt"]
+        + item["surplus_happiness"] * SUITABILITY_WEIGHTS["happiness"]
+        + item["time_efficiency"] * SUITABILITY_WEIGHTS["time"], 2)
+    return item
+
+
+@app.post("/api/simulate/anchor")
+def simulate_with_anchor(req: AnchorRequest):
+    """先跑全量，再把用户自己的组合单独算一遍，返回对比与逐年明细。"""
+    base = simulate_relative(req)
+    all_scheme = base["all_scheme"]
+    ew = base["entropy_result"]
+
+    engine = HousingFinanceEngine(req)
+    ry = int(req.anchor_rent_year)
+    ly = int(req.anchor_loan_year)
+    ds = req.anchor_down_strategy if req.anchor_down_strategy in DOWN_STRATEGIES else "balanced"
+
+    LOAN_SCHEDULE_CACHE.clear()
+    raw = engine.single_scenario_sim(ry, ly, ds, with_timeline=True)
+
+    if raw is None:
+        # 不可行：不糊弄，给出同一租房年限下最接近的可选项
+        same_rent = [x for x in all_scheme if x["rent_year"] == ry]
+        if not same_rent:
+            # 用户报的年限超出可行域（例如租 25 年，但模拟只有 30 年）
+            same_rent = all_scheme
+        near = sorted(
+            same_rent,
+            key=lambda x: (abs(x["rent_year"] - ry) * 100 + abs(x["loan_year"] - ly),
+                           -x["comprehensive_score"]),
+        )[:3]
+        return {
+            "code": 200,
+            "mode": "anchor",
+            "feasible": False,
+            "anchor_request": {"rent_year": ry, "loan_year": ly, "down_strategy": ds},
+            "reason": "这个组合在你的收入、首付和支出下过不了风控：要么首付+税费凑不齐，要么还贷期支出超过收入红线。",
+            "near_feasible": near,
+            "warning": base.get("warning"),
+            "spatial": base.get("spatial"),
+            "risk": base.get("risk"),
+            "career": base.get("career"),
+            "market": base.get("market"),
+            "top_comprehensive": base.get("top_comprehensive"),
+            "all_scheme": all_scheme,
+        }
+
+    anchor = score_against_reference(raw, all_scheme, ew)
+    best = base["top_comprehensive"][0] if base["top_comprehensive"] else anchor
+
+    # 排名：在全部可行方案里的位次
+    rank = 1 + sum(1 for x in all_scheme if x["comprehensive_score"] > anchor["comprehensive_score"])
+
+    delta = {
+        "asset_wan": round(best["liquid_asset_end_wan"] - anchor["liquid_asset_end_wan"], 2),
+        "real_asset_wan": round(best["real_asset_wan"] - anchor["real_asset_wan"], 2),
+        "interest_wan": round(best.get("total_interest_wan", 0) - anchor.get("total_interest_wan", 0), 2),
+        "comprehensive": round(best["comprehensive_score"] - anchor["comprehensive_score"], 2),
+        "risk_score": round(best["risk_score"] - anchor["risk_score"], 2),
+        "buffer_months": round(best["buffer_months"] - anchor["buffer_months"], 2),
+    }
+
+    return {
+        "code": 200,
+        "mode": "anchor",
+        "feasible": True,
+        "anchor_request": {"rent_year": ry, "loan_year": ly, "down_strategy": ds},
+        "anchor": anchor,
+        "best": best,
+        "rank": rank,
+        "total": len(all_scheme),
+        "delta": delta,
+        "timeline": anchor.get("timeline"),
+        "assumptions": base["assumptions"],
+        "spatial": base["spatial"],
+        "risk": base["risk"],
+        "career": base["career"],
+        "market": base["market"],
+        "top_comprehensive": base["top_comprehensive"],
+        "all_scheme": all_scheme,
+        "warning": base.get("warning"),
     }
 
 
