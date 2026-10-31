@@ -14,6 +14,8 @@ try:
 except Exception:  # noqa: BLE001
     data_layer = None
 
+from listings_match import match_listings  # V8.6 房源匹配（纯函数，可脱库单测）
+
 # 日志配置
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -1936,6 +1938,65 @@ def api_listing_stats(city_code: Optional[str] = None):
     except Exception as e:  # noqa: BLE001
         logging.warning("统计 listings 失败：%s", e)
         return {"code": 200, "data": [], "fallback": True, "reason": str(e)}
+
+
+# =====================================================================
+# 🏠 V8.6 房源闭环第一步：先匹配，再计算
+# ---------------------------------------------------------------------
+# 用户打开「房源」屏，第一件事不该是"我们有多少套房"，
+# 而是"我这个预算，库里到底有没有对得上的房子"。
+# 规则全部在 listings_match.py 里（纯函数、可脱库单测），这层只负责搬数据。
+# 没有就说没有：matched 为空时把库里真实的价格/面积区间告诉用户。
+# =====================================================================
+class ListingMatchRequest(BaseModel):
+    city_code: str = Field(default="450100", min_length=6, max_length=6)
+    budget_wan: float = Field(default=0, ge=0, le=100000, description="总价预算（万元）")
+    target_area_sqm: float = Field(default=0, ge=0, le=2000, description="想要的套内面积 ㎡")
+    house_type: str = Field(default="unspecified", description="new / used / unspecified")
+    public_share_pct: float = Field(default=-1, ge=-1, le=45)
+    price_tol: float = Field(default=0.10, ge=0.02, le=0.5)
+    area_tol: float = Field(default=0.15, ge=0.05, le=0.5)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+@app.post("/api/listings/match")
+def api_listings_match(req: ListingMatchRequest):
+    """在真实房源里按"总价±10% / 套内±15%"找对得上的房子。找不到就直说。"""
+    house_type = req.house_type if req.house_type in ("new", "used", "unspecified") else "unspecified"
+    share = (req.public_share_pct / 100.0
+             if req.public_share_pct is not None and req.public_share_pct >= 0
+             else DEFAULT_PUBLIC_SHARE.get(house_type, DEFAULT_PUBLIC_SHARE["unspecified"]))
+
+    if not (data_layer and data_layer.enabled()):
+        return {"code": 200, "data": [], "count": 0, "reason": "no_db",
+                "message": "数据库没连上，房源匹配暂时不可用（这不是没有房子）。",
+                "pool": {"n": 0}, "band": {}, "nearest": [], "fallback": True}
+
+    try:
+        rows = data_layer.list_listings(city_code=req.city_code, limit=500)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("房源匹配读取失败：%s", e)
+        return {"code": 200, "data": [], "count": 0, "reason": "error",
+                "message": "读房源表失败：" + str(e), "pool": {"n": 0}, "band": {},
+                "nearest": [], "fallback": True}
+
+    res = match_listings(
+        rows,
+        budget_wan=req.budget_wan,
+        target_area_sqm=req.target_area_sqm,
+        public_share=share,
+        price_tol=req.price_tol,
+        area_tol=req.area_tol,
+        limit=req.limit,
+    )
+    res.update({
+        "code": 200,
+        "data": res.pop("matched"),
+        "public_share_pct": round(share * 100, 1),
+        "city_code": req.city_code,
+        "source_note": "价格是挂牌价，不是成交价；坐标只到「区」的会标区位中心近似。",
+    })
+    return res
 
 
 @app.get("/api/health/db")
