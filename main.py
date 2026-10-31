@@ -169,8 +169,24 @@ SQUEEZE_EXPENSE_FACTOR = 0.80
 # 我们只负责提醒“请自己估算红包/旅行/医疗/意外”，由用户决定填多少。
 DEFAULT_HIDDEN_EXPENSE_MONTH = 0.0
 
+# =====================================================================
+# 🏠 V8.2 新房 / 二手房：两套交易成本口径
+# ---------------------------------------------------------------------
+# 契税按“首套”简化：90㎡ 及以下 1%，90㎡ 以上 1.5%（不区分二套三套）。
+# 新房：契税 + 维修基金（约 2%，多数城市 1%~3%）
+# 二手房：契税 + 个税（1%，按非“满五唯一”）+ 中介费（2%，买卖双方合计口径）
+# 增值税按“满二免征”简化；不满二的实际更贵，这里不制造“交易很便宜”的错觉。
+HOUSE_TYPES = {
+    "new": {"label": "新房", "maintenance": 0.02, "agent": 0.0, "income_tax": 0.0},
+    "used": {"label": "二手房", "maintenance": 0.0, "agent": 0.02, "income_tax": 0.01},
+}
+DEED_TAX_SMALL = 0.01
+DEED_TAX_LARGE = 0.015
+
+# 💰 净值口径：期末资产 = 现金 + 房子价值 − 剩余房贷
+#    原来只数现金，会出现“现金少的人其实更有钱”的错觉（V7.10.1 的教训）。
 ENTROPY_INDICATORS = [
-    ("asset", "liquid_asset_end_wan"),
+    ("asset", "net_worth_end_wan"),
     ("adapt", "adapt_score"),
     ("comfort", "comfort_score"),
     ("happiness", "surplus_happiness"),
@@ -178,7 +194,7 @@ ENTROPY_INDICATORS = [
 ]
 
 MODEL_ASSUMPTIONS = [
-    "流动资产仅计现金理财余额，不含房产残值、契税、维修基金等交易税费（坚决拒绝纸面财富幻觉）",
+    "期末资产＝现金理财余额 ＋ 房子价值（按买入价与你设定的年增值估算）− 剩余房贷；它不是挂牌价，房价涨跌由你自己设定",
     "公积金缴存基数简化等同于输入的月收入；housing_fund_pct为个人+单位合计缴存比例，双边上限24%",
     "公积金只能用于购房/还贷，不计入每月可支配现金；输入按税后到手理解，公积金账户余额不计入期末现金资产",
     "不交公积金的 opt-out 现金流（只省个人部分、企业配缴同时消失）暂未建模，避免把企业配缴误当现金",
@@ -188,7 +204,7 @@ MODEL_ASSUMPTIONS = [
     "小康家庭定义：全周期平均月度纯现金结余必须达到或超过总收入的 50%，抗拒沦为被账单绑架的打工机器",
     "反资本剥削：贷款年限越短、首付比例越高，时间效率得分越高，鼓励尽早赎清贷款",
     "抗风险稳健度算法升级：基于周期中最紧绷月份的“真实支出占比”距离70%红线的安全余量来计算",
-    "首付策略升级：输入的首付比例仅作为最低门槛，系统会智能遍历最低首付、折中首付、极限高首付（掏空现金）策略",
+    "交易成本按房屋类型区分：新房＝契税＋维修基金（约 2%）；二手房＝契税＋个税 1%＋中介费 2%（增值税按满二免征简化）",
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
     "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期",
     "空间异质性折算：房价按片区真实单价（元/㎡）折算可购面积，居住舒适度50%以上由“人均居住面积×城市资源溢价”决定，拒绝用总价幻想豪宅",
@@ -304,6 +320,9 @@ class SimulationRequest(BaseModel):
 
     # 基础资产
     house_total_wan: float = Field(gt=0)
+    # 🏠 V8.2：新房 / 二手房，交易税费与装修默认值不同
+    house_type: str = Field(pattern="^(new|used|unspecified)$", default="unspecified",
+                            description="new 新房（契税+维修基金，默认毛坯）/ used 二手房（契税+个税+中介费，默认已装修）/ unspecified 老口径 2.5%")
     initial_savings_wan: float = Field(ge=0)
     down_payment_ratio: float = Field(ge=15, le=80)
 
@@ -465,6 +484,36 @@ class HousingFinanceEngine:
         # 这是“85 万在南宁是两居，在北京是远郊老破小”的数学表达
         self.own_area_sqm = self.house_total_yuan / max(self.district_price_sqm, EPS_YUAN)
         self.area_per_person = self.own_area_sqm / self.family_size
+
+        # 🏠 V8.2 交易成本：按新房/二手房分别算，别拿一个 2.5% 糊过去。
+        #    用户显式传了 purchase_tax_rate，就以用户的为准（老接口仍然兼容）。
+        self.house_type = req.house_type if req.house_type in HOUSE_TYPES else "unspecified"
+        self.house_type_label = (
+            HOUSE_TYPES[self.house_type]["label"] if self.house_type in HOUSE_TYPES else "未指定"
+        )
+        deed = DEED_TAX_SMALL if self.own_area_sqm <= 90 else DEED_TAX_LARGE
+        # ⚠️ 没声明房屋类型（老接口 / 老脚本 / 老链接）保持原来的 2.5%，
+        #    不偷偷改历史结论——这条是 V7.4 装修默认值换来的教训。
+        if self.house_type in HOUSE_TYPES:
+            conf = HOUSE_TYPES[self.house_type]
+            self.purchase_tax_rate = (
+                deed + conf["maintenance"] + conf["agent"] + conf["income_tax"]
+            )
+            self.tax_breakdown = {
+                "deed": deed,
+                "maintenance": conf["maintenance"],
+                "agent": conf["agent"],
+                "income_tax": conf["income_tax"],
+            }
+        else:
+            self.purchase_tax_rate = req.purchase_tax_rate / 100.0
+            self.tax_breakdown = {"deed": 0.0, "maintenance": 0.0, "agent": 0.0, "income_tax": 0.0}
+
+        # 新房默认毛坯（要装修），二手房默认已装修（装修费由用户自己填）
+        # 装修口径由前端显式给：新房切换过去时前端会把默认值改成「毛坯」，
+        # 用户想选精装也能改回来——引擎不替用户猜。
+        self.reno_enabled = self.house_decoration == "rough" and self.reno_level != "none"
+        self.reno_unit_sqm = 0.0
 
         # 居住体感分：10㎡/人 = 30 分，45㎡/人 = 100 分（线性，封顶）
         self.own_comfort_spatial = min(
@@ -960,6 +1009,18 @@ class HousingFinanceEngine:
             # 借的钱终归要还：期末资产里扣回去（不制造"借来的钱也是资产"的幻觉）
             remain_cash = max(0.0, remain_cash - reno_gap_yuan)
 
+        # 💰 V8.2 净值口径：期末资产 = 现金 + 房子价值 − 剩余房贷
+        #    · 房子价值按“买入价 × 年增值^(持有时长)”估，默认涨幅 0 就是买入价
+        #    · 30 年内贷款必须还清（period_overrun 已拦截），所以剩余房贷恒为 0；
+        #      仍显式列出来，避免以后放宽周期时又被漏掉。
+        house_value_end_yuan = purchase_price_yuan * (
+            (1 + self.house_growth) ** max(0, SIM_TOTAL_YEARS - rent_year)
+        )
+        remaining_loan_yuan = 0.0
+        equity_end_yuan = house_value_end_yuan - remaining_loan_yuan
+        net_worth_end_yuan = remain_cash + equity_end_yuan
+        deflator = (1 + self.consumption_inflation) ** SIM_TOTAL_YEARS
+
         implied_rent_house = (self.base_rent * 12 / RENT_SALE_RATIO) / 10000
         target_house = self.req.house_total_wan
         rent_comfort = 82.0 if implied_rent_house >= target_house else 60.0 + 22.0 * (implied_rent_house / target_house)
@@ -1058,6 +1119,16 @@ class HousingFinanceEngine:
             "down_payment_wan": round(actual_down_payment_yuan / 10000, 2),
             "loan_principal_wan": round(actual_loan_principal / 10000, 2),
             "liquid_asset_end_wan": round(remain_cash / 10000, 2),
+            # 💰 V8.2：把房子算进来，才是“这个人 30 年后到底有多少”
+            "house_value_end_wan": round(house_value_end_yuan / 10000, 2),
+            "loan_remaining_wan": round(remaining_loan_yuan / 10000, 2),
+            "equity_end_wan": round(equity_end_yuan / 10000, 2),
+            "net_worth_end_wan": round(net_worth_end_yuan / 10000, 2),
+            "real_net_worth_end_wan": round(net_worth_end_yuan / deflator / 10000, 2),
+            # 🏠 V8.2：交易成本口径，前端要能显示“这笔钱花在哪”
+            "house_type": self.house_type,
+            "purchase_tax_wan": round(purchase_tax_yuan / 10000, 2),
+            "purchase_tax_rate_pct": round(self.purchase_tax_rate * 100, 2),
             # 💸 名义资产 × 通胀折现 = 真实购买力，戳破“30年后千万富翁”的幻觉
             "real_asset_wan": round(
                 remain_cash / ((1 + self.consumption_inflation) ** SIM_TOTAL_YEARS) / 10000, 2
@@ -1301,7 +1372,7 @@ def simulate_relative(req: SimulationRequest):
             "当前参数下可行方案极少（部分被70%支出红线强杀），说明该方案风险极高！"
         )
 
-    top_asset = sorted(out_list, key=lambda x: x["liquid_asset_end_wan"], reverse=True)[
+    top_asset = sorted(out_list, key=lambda x: x.get("net_worth_end_wan", x["liquid_asset_end_wan"]), reverse=True)[
         :TOP_N
     ]
     top_adapt = sorted(out_list, key=lambda x: x["adapt_score"], reverse=True)[:TOP_N]
@@ -1671,7 +1742,11 @@ def simulate_with_anchor(req: AnchorRequest):
     rank = 1 + sum(1 for x in all_scheme if x["comprehensive_score"] > anchor["comprehensive_score"])
 
     delta = {
-        "asset_wan": round(best["liquid_asset_end_wan"] - anchor["liquid_asset_end_wan"], 2),
+        "asset_wan": round(
+            best.get("net_worth_end_wan", best["liquid_asset_end_wan"])
+            - anchor.get("net_worth_end_wan", anchor["liquid_asset_end_wan"]), 2
+        ),
+        "cash_wan": round(best["liquid_asset_end_wan"] - anchor["liquid_asset_end_wan"], 2),
         "real_asset_wan": round(best["real_asset_wan"] - anchor["real_asset_wan"], 2),
         "interest_wan": round(best.get("total_interest_wan", 0) - anchor.get("total_interest_wan", 0), 2),
         "comprehensive": round(best["comprehensive_score"] - anchor["comprehensive_score"], 2),
