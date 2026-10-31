@@ -514,6 +514,37 @@ class HousingFinanceEngine:
         self.live_area_sqm = max(0.0, self.own_area_sqm * (1.0 - self.public_share))         # 套内
         self.area_per_person = self.live_area_sqm / self.family_size
 
+        # 🏠 面积 × 总价 的匹配结论（先匹配，再计算）
+        #   fit   能对上（±10%）
+        #   over  这个预算能买到更大的 —— 这不是错误，是“还能更好”
+        #   short 钱不够 —— 这一种才需要拦下来
+        self.area_match = None
+        if self.target_area_sqm > 0 and self.live_area_sqm > 0:
+            ratio = self.live_area_sqm / self.target_area_sqm
+            share = max(0.55, 1.0 - self.public_share)
+            need_total = (self.target_area_sqm / share) * self.district_price_sqm / 10000
+            if ratio < 0.90:
+                self.area_match = {
+                    "status": "short",
+                    "live_area_sqm": round(self.live_area_sqm, 1),
+                    "target_area_sqm": round(self.target_area_sqm, 1),
+                    "need_total_wan": round(need_total, 1),
+                }
+            elif ratio > 1.10:
+                self.area_match = {
+                    "status": "over",
+                    "live_area_sqm": round(self.live_area_sqm, 1),
+                    "target_area_sqm": round(self.target_area_sqm, 1),
+                    "need_total_wan": round(need_total, 1),
+                }
+            else:
+                self.area_match = {
+                    "status": "fit",
+                    "live_area_sqm": round(self.live_area_sqm, 1),
+                    "target_area_sqm": round(self.target_area_sqm, 1),
+                    "need_total_wan": round(need_total, 1),
+                }
+
         # 🏠 V8.2 交易成本：按新房/二手房分别算，别拿一个 2.5% 糊过去。
         #    用户显式传了 purchase_tax_rate，就以用户的为准（老接口仍然兼容）。
         self.house_type = req.house_type if req.house_type in HOUSE_TYPES else "unspecified"
@@ -653,6 +684,7 @@ class HousingFinanceEngine:
             "public_share_pct": round(self.public_share * 100, 1),
             "area_per_person": round(self.area_per_person, 1),
             "target_area_sqm": round(self.target_area_sqm, 1),
+            "area_match": self.area_match,
             "own_comfort_spatial": round(self.own_comfort_spatial, 2),
             "local_2bed_rent": round(self.local_2bed_rent, 0),
             "commute": {
@@ -1371,26 +1403,23 @@ def _validate_area_input(req: "SimulationRequest") -> None:
 
 
 def _area_mismatch_message(engine: "HousingFinanceEngine", req: "SimulationRequest") -> Optional[str]:
-    """先匹配，再计算。
+    """先匹配，再计算——而且只拦“钱不够”这一种。
 
-    用户同时填了总价和套内面积，说明他心里有一个很具体的房子。
-    第一件事应该是问“这样的房子存不存在”，而不是硬算一个偏得很远的方案。
-    容差 10%（同片区不同楼栋的正常浮动），超出就直说没有。
+    · 90 万买到 115㎡：这不是错配，是买得更好，放行，结果里提示“还能更便宜”。
+    · 90 万只买到 49㎡：这是真买不起，拦下来，把缺口和达标价说清楚。
+    · 若干年后接了真实房源：这一层换成“去房源库查”，文案不用重写。
     """
-    if req.target_area_sqm <= 0 or req.house_total_wan <= 0 or engine.live_area_sqm <= 0:
+    info = engine.area_match
+    if not info or info.get("status") != "short":
         return None
-    dev = abs(engine.live_area_sqm - req.target_area_sqm) / max(req.target_area_sqm, 0.01)
-    if dev <= 0.10:
-        return None
-    share = max(0.55, 1.0 - engine.public_share)
-    need_total = (req.target_area_sqm / share) * engine.district_price_sqm / 10000
+    gap = info["target_area_sqm"] - info["live_area_sqm"]
     return (
-        f"没匹配到这样的房子：{engine.city_name}"
-        f"（片区单价 {engine.district_price_sqm:.0f} 元/㎡、公摊 {engine.public_share * 100:.0f}%）里，"
-        f"{req.house_total_wan:.0f} 万大约只能买到套内 {engine.live_area_sqm:.0f} ㎡"
-        f"（建面 {engine.own_area_sqm:.0f} ㎡）。"
-        f"想要套内 {req.target_area_sqm:.0f} ㎡，按这个单价大约要 {need_total:.0f} 万。"
-        "总价和面积只填一个，我们就能给你算；两个都填又对不上，算出来也是假的。"
+        f"这套房子没对上：{engine.city_name}这个片区，{req.house_total_wan:.0f} 万大约只能买到"
+        f"套内 {info['live_area_sqm']:.0f} ㎡（建面 {engine.own_area_sqm:.0f} ㎡），"
+        f"比你要的 {info['target_area_sqm']:.0f} ㎡ 少了 {gap:.0f} ㎡。\n\n"
+        f"想在这个片区住到 {info['target_area_sqm']:.0f} ㎡ 套内，按目前的单价大约要 "
+        f"{info['need_total_wan']:.0f} 万。\n"
+        "你可以把总价提到这个数，或者把面积放宽一点——只填其中一个，我们就能直接算。"
     )
 
 
