@@ -1371,16 +1371,26 @@ def _validate_area_input(req: "SimulationRequest") -> None:
 
 
 def _area_mismatch_message(engine: "HousingFinanceEngine", req: "SimulationRequest") -> Optional[str]:
+    """先匹配，再计算。
+
+    用户同时填了总价和套内面积，说明他心里有一个很具体的房子。
+    第一件事应该是问“这样的房子存不存在”，而不是硬算一个偏得很远的方案。
+    容差 10%（同片区不同楼栋的正常浮动），超出就直说没有。
+    """
     if req.target_area_sqm <= 0 or req.house_total_wan <= 0 or engine.live_area_sqm <= 0:
         return None
     dev = abs(engine.live_area_sqm - req.target_area_sqm) / max(req.target_area_sqm, 0.01)
-    if dev <= 0.25:
+    if dev <= 0.10:
         return None
+    share = max(0.55, 1.0 - engine.public_share)
+    need_total = (req.target_area_sqm / share) * engine.district_price_sqm / 10000
     return (
-        f"按 {req.house_total_wan:.0f} 万在{engine.city_name}大约只能买到 "
-        f"{engine.own_area_sqm:.0f} ㎡ 建面（套内约 {engine.live_area_sqm:.0f} ㎡，"
-        f"公摊 {engine.public_share * 100:.0f}%），离你要的 {req.target_area_sqm:.0f} ㎡ 差得有点远。"
-        "总价和面积没法同时满足——改一个再来。"
+        f"没匹配到这样的房子：{engine.city_name}"
+        f"（片区单价 {engine.district_price_sqm:.0f} 元/㎡、公摊 {engine.public_share * 100:.0f}%）里，"
+        f"{req.house_total_wan:.0f} 万大约只能买到套内 {engine.live_area_sqm:.0f} ㎡"
+        f"（建面 {engine.own_area_sqm:.0f} ㎡）。"
+        f"想要套内 {req.target_area_sqm:.0f} ㎡，按这个单价大约要 {need_total:.0f} 万。"
+        "总价和面积只填一个，我们就能给你算；两个都填又对不上，算出来也是假的。"
     )
 
 
