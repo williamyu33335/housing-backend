@@ -183,6 +183,12 @@ HOUSE_TYPES = {
 DEED_TAX_SMALL = 0.01
 DEED_TAX_LARGE = 0.015
 
+# 🏗️ V8.3 公摊：房产证上的建筑面积 ≠ 能住的面积。
+# 数据来自南宁的普遍口径（豆包核过）：
+#   新房电梯 18%~24%（取 22%）；二手房老楼梯 6%~12%、次新电梯 18%~24%（取 15% 折中）。
+# 用户可以在界面上改，这里只是默认值。
+DEFAULT_PUBLIC_SHARE = {"new": 0.22, "used": 0.15, "unspecified": 0.18}
+
 # 💰 净值口径：期末资产 = 现金 + 房子价值 − 剩余房贷
 #    原来只数现金，会出现“现金少的人其实更有钱”的错觉（V7.10.1 的教训）。
 ENTROPY_INDICATORS = [
@@ -208,6 +214,7 @@ MODEL_ASSUMPTIONS = [
     "30年周期内未结清贷款的组合直接剔除，不跨周期挂账",
     "绝对模式采用离散租金档位抽样遍历，保留全部0至20年租期",
     "空间异质性折算：房价按片区真实单价（元/㎡）折算可购面积，居住舒适度50%以上由“人均居住面积×城市资源溢价”决定，拒绝用总价幻想豪宅",
+    "建筑面积不等于能住的面积：房产证按建筑面积计价，公摊部分同样付钱。模型按公摊率把建面折成套内，人均面积用套内算","",
     "通勤折现：租房期与还贷期分别使用各自的单程通勤分钟，按周期加权得到时间效率；单程15分钟为满分，60分钟后进入加速惩罚区",
     "通勤交通费按月计入现金流：租房期与买房期分别扣减，默认按 120元 + 4元/分钟 估算，可显式覆盖",
     "相对收入位置：结余幸福感乘以本地收入分位系数（你的收入/城市平均薪资），同样的结余在不同城市体感完全不同",
@@ -319,7 +326,13 @@ class SimulationRequest(BaseModel):
     car_monthly_expense: float = Field(ge=0, default=0)
 
     # 基础资产
-    house_total_wan: float = Field(gt=0)
+    house_total_wan: float = Field(ge=0, default=0,
+                                   description="房屋总价（万元）；可以为 0，此时按 target_area_sqm 反推")
+    # 🏗️ V8.3 面积与公摊
+    target_area_sqm: float = Field(ge=0, default=0,
+                                   description="期望的套内（实际居住）面积，㎡；与总价至少填一个")
+    public_share_pct: float = Field(ge=0, le=45, default=-1,
+                                    description="公摊率 %；-1 = 按房屋类型取默认（新房22%/二手房15%）")
     # 🏠 V8.2：新房 / 二手房，交易税费与装修默认值不同
     house_type: str = Field(pattern="^(new|used|unspecified)$", default="unspecified",
                             description="new 新房（契税+维修基金，默认毛坯）/ used 二手房（契税+个税+中介费，默认已装修）/ unspecified 老口径 2.5%")
@@ -480,10 +493,26 @@ class HousingFinanceEngine:
         self.district_price_sqm = req.district_price_sqm
         self.family_size = max(1, req.family_size)
 
-        # 总价 → 真实可购面积（㎡）→ 人均居住面积（㎡/人）
-        # 这是“85 万在南宁是两居，在北京是远郊老破小”的数学表达
-        self.own_area_sqm = self.house_total_yuan / max(self.district_price_sqm, EPS_YUAN)
-        self.area_per_person = self.own_area_sqm / self.family_size
+        # 🏗️ V8.3 公摊：先算公摊率，再算建面 / 套内。
+        # 这是“85 万在南宁是两居，在北京是远郊老破小”的数学表达，
+        # 但房产证写的是建筑面积——公摊那部分也按同一个单价收钱。
+        self.house_type = req.house_type if req.house_type in HOUSE_TYPES else "unspecified"
+        self.public_share = (
+            req.public_share_pct / 100.0
+            if req.public_share_pct is not None and req.public_share_pct >= 0
+            else DEFAULT_PUBLIC_SHARE.get(self.house_type, DEFAULT_PUBLIC_SHARE["unspecified"])
+        )
+        self.target_area_sqm = max(0.0, float(req.target_area_sqm or 0))
+
+        # 只知道“我想住 90 平”，不知道总价：按片区单价反推建筑面积
+        if self.house_total_yuan <= 0 and self.target_area_sqm > 0:
+            built = self.target_area_sqm / max(0.55, 1.0 - self.public_share)
+            self.house_total_yuan = built * self.district_price_sqm
+            self.min_down_payment_yuan = self.house_total_yuan * self.min_down_ratio
+
+        self.own_area_sqm = self.house_total_yuan / max(self.district_price_sqm, EPS_YUAN)  # 建面
+        self.live_area_sqm = max(0.0, self.own_area_sqm * (1.0 - self.public_share))         # 套内
+        self.area_per_person = self.live_area_sqm / self.family_size
 
         # 🏠 V8.2 交易成本：按新房/二手房分别算，别拿一个 2.5% 糊过去。
         #    用户显式传了 purchase_tax_rate，就以用户的为准（老接口仍然兼容）。
@@ -620,7 +649,10 @@ class HousingFinanceEngine:
             "family_size": self.family_size,
             "family_label": FAMILY_LABELS.get(self.family_size, "自定义"),
             "own_area_sqm": round(self.own_area_sqm, 1),
+            "live_area_sqm": round(self.live_area_sqm, 1),
+            "public_share_pct": round(self.public_share * 100, 1),
             "area_per_person": round(self.area_per_person, 1),
+            "target_area_sqm": round(self.target_area_sqm, 1),
             "own_comfort_spatial": round(self.own_comfort_spatial, 2),
             "local_2bed_rent": round(self.local_2bed_rent, 0),
             "commute": {
@@ -1329,13 +1361,40 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+def _validate_area_input(req: "SimulationRequest") -> None:
+    """总价与居住面积至少要有一个；两个都填但差太远时，直接说清楚。"""
+    if req.house_total_wan <= 0 and (req.target_area_sqm or 0) <= 0:
+        raise HTTPException(
+            400,
+            "房屋总价和期望居住面积至少要填一个：知道总价就填总价，只知道想住多大就填面积。",
+        )
+
+
+def _area_mismatch_message(engine: "HousingFinanceEngine", req: "SimulationRequest") -> Optional[str]:
+    if req.target_area_sqm <= 0 or req.house_total_wan <= 0 or engine.live_area_sqm <= 0:
+        return None
+    dev = abs(engine.live_area_sqm - req.target_area_sqm) / max(req.target_area_sqm, 0.01)
+    if dev <= 0.25:
+        return None
+    return (
+        f"按 {req.house_total_wan:.0f} 万在{engine.city_name}大约只能买到 "
+        f"{engine.own_area_sqm:.0f} ㎡ 建面（套内约 {engine.live_area_sqm:.0f} ㎡，"
+        f"公摊 {engine.public_share * 100:.0f}%），离你要的 {req.target_area_sqm:.0f} ㎡ 差得有点远。"
+        "总价和面积没法同时满足——改一个再来。"
+    )
+
+
 @app.post("/api/simulate")
 def simulate_relative(req: SimulationRequest):
     if req.monthly_income_net <= req.monthly_expense:
         raise HTTPException(400, "税后月收入必须大于每月基础生活开销")
 
     start_time = time.time()
+    _validate_area_input(req)
     engine = HousingFinanceEngine(req)
+    _mismatch = _area_mismatch_message(engine, req)
+    if _mismatch:
+        raise HTTPException(400, _mismatch)
     spatial_payload = engine.spatial_summary()
     result_list = []
     sk_down, sk_loan, total = 0, 0, 0
@@ -1429,7 +1488,11 @@ def simulate_absolute(req: AbsoluteSimulationRequest):
     seen_zero_rent_combos = set()
 
     LOAN_SCHEDULE_CACHE.clear()
+    _validate_area_input(req)
     engine = HousingFinanceEngine(SimulationRequest(**base_payload))
+    _mismatch = _area_mismatch_message(engine, req)
+    if _mismatch:
+        raise HTTPException(400, _mismatch)
     spatial_payload = engine.spatial_summary()
 
     for level in RENT_LEVELS_FOR_ABSOLUTE:
