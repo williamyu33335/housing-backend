@@ -103,6 +103,10 @@ def list_listings(city_code=None, max_price=None, min_area=None,
                l.community, l.title,
                l.total_price::float AS total_price,
                l.area_sqm::float    AS area_sqm,
+               -- V8.6：套内面积与装修状态。列还没迁移时 to_jsonb 取值是 NULL，
+               -- 前端/匹配层会自动按公摊率折算，不会因为"少一列"整体报错。
+               (to_jsonb(l)->>'live_area_sqm')::float AS live_area_sqm,
+               (to_jsonb(l)->>'decoration')           AS decoration,
                l.price_sqm::float   AS price_sqm,
                l.bedrooms,
                COALESCE(l.lat, d.lat) AS lat,
