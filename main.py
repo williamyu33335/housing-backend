@@ -5,7 +5,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 import math
+import json
 import logging
+import os
 import time
 from typing import List, Dict, Optional
 
@@ -15,6 +17,46 @@ except Exception:  # noqa: BLE001
     data_layer = None
 
 from listings_match import match_listings  # V8.6 房源匹配（纯函数，可脱库单测）
+
+# =====================================================================
+# 🧭 V8.10 房源级周边设施（可选数据）
+# ---------------------------------------------------------------------
+# 数据由 数据/fetch_listing_amenities.py 采集，落在 amenities_listings.json，
+# 索引键是"纬度,经度"（5 位小数 ≈ 1 米）。这里只在文件存在时加载：
+# 没有这份数据时，匹配完全按预算/面积跑，不会因为"缺周边"而少给一套房。
+# 部署到 Render 时把文件放进 backend/数据/ 或设 AMENITIES_LISTINGS_JSON。
+# =====================================================================
+_AMENITY_CACHE: Dict[str, object] = {"path": None, "mtime": None, "map": {}}
+
+
+def _amenity_json_candidates() -> List[str]:
+    env = (os.getenv("AMENITIES_LISTINGS_JSON") or "").strip()
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = [env] if env else []
+    out.append(os.path.join(here, "数据", "amenities_listings.json"))
+    out.append(os.path.join(os.path.dirname(here), "frontend", "amenities_listings.json"))
+    return out
+
+
+def amenity_map() -> Dict[str, dict]:
+    """按坐标索引的房源级周边数据；文件不存在就返回空字典（不是报错）。"""
+    for path in _amenity_json_candidates():
+        try:
+            if not path or not os.path.exists(path):
+                continue
+            mtime = os.path.getmtime(path)
+            if _AMENITY_CACHE["path"] == path and _AMENITY_CACHE["mtime"] == mtime:
+                return _AMENITY_CACHE["map"]  # type: ignore[return-value]
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            data = raw.get("by_coord") if isinstance(raw, dict) else None
+            data = data if isinstance(data, dict) else {}
+            _AMENITY_CACHE.update({"path": path, "mtime": mtime, "map": data})
+            logging.info("房源级周边数据已加载：%s（%d 个坐标）", path, len(data))
+            return data
+        except Exception as e:  # noqa: BLE001
+            logging.warning("读取房源级周边数据失败（%s）：%s", path, e)
+    return {}
 
 # 日志配置
 logging.basicConfig(
@@ -380,6 +422,9 @@ class SimulationRequest(BaseModel):
     own_commute_min: float = Field(ge=0, le=180, default=40)
     rent_transport_month: float = Field(ge=0, default=0)
     own_transport_month: float = Field(ge=0, default=0)
+    # 🚦 早晚高峰假设倍数：1.0 = 不假设（默认）；1.45 = "堵 45%" 的推演。
+    # 真实路况数据到位后，这个字段退役，换成按 OD 实测的分钟数。
+    commute_peak_factor: float = Field(ge=1.0, le=2.0, default=1.0)
 
 
     # 金融假设
@@ -586,19 +631,29 @@ class HousingFinanceEngine:
         self.local_2bed_rent = max(self.city_avg_rent_sqm * 70.0, EPS_YUAN)
 
         # 通勤：租房期与买房期分别计算，时间成本按周期加权
-        self.rent_commute_min = req.rent_commute_min
-        self.own_commute_min = req.own_commute_min
-        self.rent_commute_score = self.commute_score(req.rent_commute_min)
-        self.own_commute_score = self.commute_score(req.own_commute_min)
+        #
+        # 🚦 V8.11 早晚高峰（**假设值**，不是算出来的）
+        # 真实的分时段路况我们还没采（要 8 区 × 3 时段 × N 条 OD，见数据缺口文档）。
+        # 在那之前只接受一个用户能看见、能关掉的倍数：
+        #   peak_factor = 1.0 → 完全按平峰算（默认，老结论一个数字都不变）
+        #   peak_factor = 1.45 → "如果早晚高峰堵 45%" 的推演
+        # 有了真实数据之后，把这个倍数换成实测分钟数即可，模型结构不用动。
+        self.peak_factor = max(1.0, min(float(getattr(req, "commute_peak_factor", 1.0) or 1.0), 2.0))
+        self.rent_commute_min_raw = req.rent_commute_min
+        self.own_commute_min_raw = req.own_commute_min
+        self.rent_commute_min = req.rent_commute_min * self.peak_factor
+        self.own_commute_min = req.own_commute_min * self.peak_factor
+        self.rent_commute_score = self.commute_score(self.rent_commute_min)
+        self.own_commute_score = self.commute_score(self.own_commute_min)
         self.rent_transport_month = (
             req.rent_transport_month
             if req.rent_transport_month > 0
-            else 120.0 + 4.0 * req.rent_commute_min
+            else 120.0 + 4.0 * self.rent_commute_min
         )
         self.own_transport_month = (
             req.own_transport_month
             if req.own_transport_month > 0
-            else 120.0 + 4.0 * req.own_commute_min
+            else 120.0 + 4.0 * self.own_commute_min
         )
 
         # 相对收入位置：你在本地到底是“人上人”还是“被平均”
@@ -700,6 +755,16 @@ class HousingFinanceEngine:
                     "rent": round(self.rent_transport_month, 0),
                     "own": round(self.own_transport_month, 0),
                 },
+                # 🚦 假设值要可见：倍数、原始分钟、以及"这是假设不是实测"
+                "peak_factor": round(self.peak_factor, 2),
+                "peak_applied": self.peak_factor > 1.0 + 1e-9,
+                "rent_min_raw": round(self.rent_commute_min_raw, 1),
+                "own_min_raw": round(self.own_commute_min_raw, 1),
+                "peak_note": (
+                    f"已按早晚高峰 ×{self.peak_factor:g} 估算（假设值：真实分时段路况还没采，"
+                    "不是实测数据）" if self.peak_factor > 1.0 + 1e-9
+                    else "按平峰单程时间算（没有叠加拥堵假设）"
+                ),
             },
             "pir": round(pir, 2),
             "rent_yield_pct": round(rent_yield, 3),
@@ -1957,6 +2022,9 @@ class ListingMatchRequest(BaseModel):
     price_tol: float = Field(default=0.10, ge=0.02, le=0.5)
     area_tol: float = Field(default=0.15, ge=0.05, le=0.5)
     limit: int = Field(default=20, ge=1, le=50)
+    # V8.10：便利分只影响排序，不影响"有没有对得上"
+    pref: str = Field(default="commute", description="commute / family / leisure")
+    amenity_weight: float = Field(default=0.12, ge=0, le=0.3)
 
 
 @app.post("/api/listings/match")
@@ -1988,6 +2056,9 @@ def api_listings_match(req: ListingMatchRequest):
         price_tol=req.price_tol,
         area_tol=req.area_tol,
         limit=req.limit,
+        amenity_by_coord=amenity_map(),
+        pref=req.pref if req.pref in ("commute", "family", "leisure") else "commute",
+        amenity_weight=req.amenity_weight,
     )
     res.update({
         "code": 200,

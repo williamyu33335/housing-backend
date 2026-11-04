@@ -19,6 +19,14 @@ from __future__ import annotations
 
 from typing import Any
 
+try:                       # 单测可以直接跑，不要求包路径正确
+    from amenity_score import score as _amenity_score
+except ImportError:        # pragma: no cover
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from amenity_score import score as _amenity_score
+
 
 def _num(v, default=0.0) -> float:
     try:
@@ -27,6 +35,34 @@ def _num(v, default=0.0) -> float:
         return float(v)
     except (TypeError, ValueError):
         return default
+
+
+def coord_key(lat, lng) -> str | None:
+    """房源坐标的索引键。5 位小数 ≈ 1 米，同一个楼盘共用同一个键是常态。"""
+    la, ln = _num(lat, None), _num(lng, None)
+    if la is None or ln is None:
+        return None
+    return f"{la:.5f},{ln:.5f}"
+
+
+def amenity_of(row: dict, amenity_by_coord: dict | None, pref: str) -> dict | None:
+    """这套房的便利分：房源级数据优先，其次片区级，都没有就是 None。
+
+    返回 None 和返回 0 分是两件事——
+    None = 没采到（界面写"暂无周边数据"），0 = 采到了但确实很荒。
+    """
+    if not amenity_by_coord:
+        return None
+    hit = amenity_by_coord.get(coord_key(row.get("lat"), row.get("lng")) or "")
+    if not isinstance(hit, dict):
+        return None
+    scores = hit.get("scores") if isinstance(hit.get("scores"), dict) else None
+    s = (scores or {}).get(pref)
+    if s is None:
+        s = _amenity_score(hit, pref)
+    if s is None:
+        return None
+    return {"score": int(s), "level": "listing"}
 
 
 def live_area_of(row: dict, public_share: float) -> float:
@@ -44,7 +80,8 @@ def live_area_of(row: dict, public_share: float) -> float:
     return built * max(0.55, 1.0 - public_share)
 
 
-def _decorate(row: dict, public_share: float, budget_wan: float, target_area: float) -> dict:
+def _decorate(row: dict, public_share: float, budget_wan: float, target_area: float,
+              amenity: dict | None = None) -> dict:
     total = _num(row.get("total_price"))
     live = live_area_of(row, public_share)
     price_wan = total / 10000.0
@@ -68,6 +105,10 @@ def _decorate(row: dict, public_share: float, budget_wan: float, target_area: fl
         "lat": row.get("lat"),
         "lng": row.get("lng"),
     }
+    # 🧭 V8.10：便利分挂在每一套房上，前端不再自己算
+    if amenity:
+        out["amenity_score"] = amenity["score"]
+        out["amenity_level"] = amenity["level"]
     if budget_wan > 0:
         out["price_delta_pct"] = round((price_wan - budget_wan) / budget_wan * 100.0, 1)
     if target_area > 0 and live > 0:
@@ -77,11 +118,17 @@ def _decorate(row: dict, public_share: float, budget_wan: float, target_area: fl
 
 def match_listings(rows, budget_wan: float = 0.0, target_area_sqm: float = 0.0,
                    public_share: float = 0.15, price_tol: float = 0.10,
-                   area_tol: float = 0.15, limit: int = 20) -> dict:
+                   area_tol: float = 0.15, limit: int = 20,
+                   amenity_by_coord: dict | None = None, pref: str = "commute",
+                   amenity_weight: float = 0.12) -> dict:
     """在真实房源里按"总价±10% / 套内±15%"找对得上的房子。
 
     budget_wan=0 表示用户没填总价（只看面积）；target_area_sqm=0 表示没填面积。
     两个都填 → 双条件；只填一个 → 单条件；都不填 → 不猜，直接说不知道要找什么。
+
+    amenity_by_coord（V8.10）：{"22.85356,108.39446": {..., "scores": {...}}}。
+    便利分只做排序里的润色（权重 0.12），预算贴合度永远是第一约束——
+    这是豆包的提醒：很多推荐算法翻车，就是把配套权重拉太高，让"钱"变成次要条件。
     """
     budget_wan = _num(budget_wan)
     target_area_sqm = _num(target_area_sqm)
@@ -139,6 +186,7 @@ def match_listings(rows, budget_wan: float = 0.0, target_area_sqm: float = 0.0,
         result["band"]["area_max"] = round(area_hi, 1)
 
     hits = []
+    weight = max(0.0, min(_num(amenity_weight, 0.12), 0.30))
     for r in pool:
         price_wan = _num(r["total_price"]) / 10000.0
         if not (price_lo <= price_wan <= price_hi):
@@ -146,13 +194,17 @@ def match_listings(rows, budget_wan: float = 0.0, target_area_sqm: float = 0.0,
         live = live_area_of(r, public_share)
         if target_area_sqm > 0 and not (area_lo <= live <= area_hi):
             continue
-        item = _decorate(r, public_share, budget_wan, target_area_sqm)
-        # 打分：两个条件都填时，价格和面积各占一半；只填一个就只看那个
+        amen = amenity_of(r, amenity_by_coord, pref)
+        item = _decorate(r, public_share, budget_wan, target_area_sqm, amen)
+        # 打分：两个条件都填时，价格和面积各占一半；只填一个就只看那个。
+        # 便利分是减法项：最多扣 12（≈ 预算偏差 12 个百分点），永远压不过"钱"。
         score = 0.0
         if budget_wan > 0:
             score += abs(item.get("price_delta_pct", 0)) * (0.5 if target_area_sqm > 0 else 1.0)
         if target_area_sqm > 0:
             score += abs(item.get("area_delta_pct", 0)) * (0.5 if budget_wan > 0 else 1.0)
+        if amen:
+            score -= amen["score"] * weight
         item["_score"] = score
         hits.append(item)
 
@@ -162,6 +214,13 @@ def match_listings(rows, budget_wan: float = 0.0, target_area_sqm: float = 0.0,
 
     result["matched"] = hits[:max(1, min(int(limit or 20), 50))]
     result["count"] = len(hits)
+    result["order"] = {
+        "by": "预算贴合（第一约束）+ 便利分",
+        "pref": pref,
+        "amenity_weight": round(weight, 2),
+        "amenity_rows": sum(1 for h in hits if h.get("amenity_score") is not None),
+        "note": "便利分只影响排序，不改变'有没有对得上'的判断。没有周边数据的房源不加不减。",
+    }
 
     if not hits:
         result["reason"] = "no_match"
@@ -178,6 +237,7 @@ def match_listings(rows, budget_wan: float = 0.0, target_area_sqm: float = 0.0,
         # 最接近的 3 套：单独给，名字就叫 nearest，不叫推荐
         near = sorted(pool, key=lambda r: abs(_num(r["total_price"]) / 10000.0 - budget_wan)
                       if budget_wan > 0 else abs(live_area_of(r, public_share) - target_area_sqm))
-        result["nearest"] = [_decorate(r, public_share, budget_wan, target_area_sqm) for r in near[:3]]
+        result["nearest"] = [_decorate(r, public_share, budget_wan, target_area_sqm,
+                                       amenity_of(r, amenity_by_coord, pref)) for r in near[:3]]
 
     return result
