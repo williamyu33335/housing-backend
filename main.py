@@ -1142,6 +1142,17 @@ class HousingFinanceEngine:
             # 借的钱终归要还：期末资产里扣回去（不制造"借来的钱也是资产"的幻觉）
             remain_cash = max(0.0, remain_cash - reno_gap_yuan)
 
+            # ⚠️ 这一步必须同步写回逐年 / 逐月的最后一行。
+            # 否则会出现：摘要说"你家底少 5.3 万"，而逐年明细里"你的现金"反而更多——
+            # 差的正是这笔装修借款（用户的真实反馈：2026-11-05）。
+            # 摘要与明细对不上，比算错更伤信任：用户会以为模型在骗他。
+            if timeline_raw:
+                row = timeline_raw[-1]
+                timeline_raw[-1] = row[:4] + (remain_cash,) + row[5:]
+            if month_raw:
+                row = month_raw[-1]
+                month_raw[-1] = row[:5] + (remain_cash,) + row[6:]
+
         # 💰 V8.2 净值口径：期末资产 = 现金 + 房子价值 − 剩余房贷
         #    · 房子价值按“买入价 × 年增值^(持有时长)”估，默认涨幅 0 就是买入价
         #    · 30 年内贷款必须还清（period_overrun 已拦截），所以剩余房贷恒为 0；
