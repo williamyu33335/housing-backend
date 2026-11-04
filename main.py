@@ -110,9 +110,11 @@ COMMUTE_PENALTY_PER_MIN = 1.25
 COMMUTE_HEAVY_MIN = 60
 COMMUTE_HEAVY_EXTRA = 0.8
 
-# 空间舒适度、通勤得分在最终五维中的占比
+# 空间舒适度在最终五维中的占比
 COMFORT_SPATIAL_WEIGHT = 0.55
-TIME_COMMUTE_WEIGHT = 0.55
+# V8.11：时间效率不再混入通勤（通勤是"哪套房"的属性，不是"租几年/贷几年"的属性）。
+# 常量留着只为记录历史口径，代码里已不再使用。
+TIME_COMMUTE_WEIGHT = 0.0
 
 FAMILY_LABELS = {1: "单身贵族", 2: "二人世界", 3: "三口之家"}
 
@@ -1181,19 +1183,20 @@ class HousingFinanceEngine:
         rel_mult = min(1.15, max(0.85, 0.85 + 0.15 * self.rel_income))
         happiness = min(100.0, happiness_base * rel_mult)
 
-        # ⏱️ 时间效率：原有“租贷年限”得分 + 周期通勤得分（租房期/买房期分别计分）
+        # ⏱️ 时间效率（V8.11 修正口径）
+        # 这个词的意思是"离买完房还有多久"：租得越久、贷得越久，分越低。
+        # 它 **不含通勤**——通勤是"哪套房"的属性，不是"租几年/贷几年"这个组合的属性：
+        #   · 把通勤塞进组合分，等于给所有组合加同一个常数；
+        #   · 更糟的是它按 rent_month/own_month 加权，会让"租久一点"和"贷久一点"
+        #     因为通勤权重不同而互相比出假差异。
+        # 通勤单独在 spatial.commute 里报（分钟 / 分数 / 时间成本），
+        # 房源匹配时再看（房源级通勤数据到位后接进 listings_match）。
         time_eff_raw = max(0.0, 100.0 - (rent_year / SIM_TOTAL_YEARS * 30 + loan_year / SIM_TOTAL_YEARS * 70))
-        time_base = 60.0 + time_eff_raw * 0.4
+        time_eff = 60.0 + time_eff_raw * 0.4
+        # 仍保留这个数字用于展示"这条时间线里，通勤折现掉多少"，但不进综合分
         commute_life = (
             rent_month * self.rent_commute_score + own_month * self.own_commute_score
         ) / (SIM_TOTAL_YEARS * 12)
-        time_eff = min(
-            100.0,
-            max(
-                0.0,
-                time_base * (1 - TIME_COMMUTE_WEIGHT) + commute_life * TIME_COMMUTE_WEIGHT,
-            ),
-        )
 
         months = None
         if month_raw is not None:
