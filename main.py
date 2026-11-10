@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import time
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 
 try:
     import db as data_layer
@@ -17,6 +17,7 @@ except Exception:  # noqa: BLE001
     data_layer = None
 
 from listings_match import match_listings  # V8.6 房源匹配（纯函数，可脱库单测）
+import collect  # V9.1 匿名画像：纯函数，不依赖数据库
 
 # =====================================================================
 # 🧭 V8.10 房源级周边设施（可选数据）
@@ -2082,6 +2083,61 @@ def api_listings_match(req: ListingMatchRequest):
         "source_note": "价格是挂牌价，不是成交价；坐标只到「区」的会标区位中心近似。",
     })
     return res
+
+
+# =====================================================================
+# V9.1 匿名画像采集：只收"能用来做报告"的参数，不收身份
+# ---------------------------------------------------------------------
+# · 客户端在「我的 → 匿名数据」里可以随时关掉；
+# · 服务端只存 collect.normalize() 的区间化结果；
+# · 没有 DATABASE_URL 时接口不会报错，只是 stored=false（本地开发友好）。
+# =====================================================================
+class CollectMeta(BaseModel):
+    session_id: Optional[str] = None
+    app_version: Optional[str] = None
+    platform: Optional[str] = "web"
+    kind: Optional[str] = "simulate"
+
+
+class CollectRequest(BaseModel):
+    params: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Dict[str, Any]] = None
+    meta: Optional[CollectMeta] = None
+
+
+@app.get("/api/collect")
+def api_collect_describe():
+    """说明收什么、不收什么。公开可读，方便写隐私政策时直接引用。"""
+    return {"ok": True, **collect.describe()}
+
+
+@app.post("/api/collect")
+def api_collect(req: CollectRequest):
+    payload_size = len(json.dumps({"p": req.params, "r": req.result}, ensure_ascii=False))
+    if payload_size > 20000:
+        raise HTTPException(status_code=413, detail="采集载荷过大（>20KB），已拒绝")
+    meta = (req.meta.model_dump() if req.meta else {}) or {}
+    row = collect.normalize(req.params, req.result, meta)
+    if not row.get("session_id"):
+        raise HTTPException(status_code=400, detail="缺少合法的 session_id（8~64 位字母数字）")
+    stored = False
+    if data_layer is not None:
+        try:
+            stored = data_layer.save_profile(row)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("匿名画像写入失败（不影响前端）：%s", e)
+    return {"ok": True, "stored": stored}
+
+
+@app.get("/api/collect/summary")
+def api_collect_summary(days: int = 90, token: str = ""):
+    """聚合报告。必须配置 STATS_TOKEN 环境变量，且请求带上相同的 token。"""
+    expected = os.getenv("STATS_TOKEN", "").strip()
+    if not expected or token != expected:
+        raise HTTPException(status_code=403, detail="统计接口未开放（需要 STATS_TOKEN）")
+    if data_layer is None or not data_layer.enabled():
+        return {"ok": False, "enabled": False, "detail": "数据库未配置"}
+    return {"ok": True, "enabled": True, "days": days, **data_layer.profile_summary(days)}
 
 
 @app.get("/api/health/db")
